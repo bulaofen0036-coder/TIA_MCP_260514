@@ -1,8 +1,8 @@
 {
   "package": "TIA_MCP_Delivery_v2.4.0",
-  "generatedAt": "2026-08-20T20:01:39.586911+08:00",
+  "generatedAt": "2026-08-31T16:53:50.760031+08:00",
   "source": "live MCP tools/list of TiaMcpServer.exe",
-  "toolCount": 208,
+  "toolCount": 209,
   "note": "Full roster (--profile full). The default lite profile lists ~49 of these; the rest stay reachable via FindTools + CallTool. Runtime tools/list remains authoritative.",
   "tools": [
     {
@@ -439,6 +439,17 @@
         "maxEntries"
       ],
       "description": "[L2][Category:PLC-Online][PreCondition:Connect+OpenProject+GoOnline] Compare the offline PLC software in the project against the program currently running on the physical CPU. Use after editing blocks to confirm what differs from the live CPU before downloading, or after a download to verify offline/online consistency. Returns a tree-walked list of differences (only entries where ComparisonResult is not 'Equal' are reported). Requires GoOnline to be called first; will return IsOnline=false with guidance otherwise."
+    },
+    {
+      "name": "CompileAndDiagnoseHmi",
+      "layer": "L1",
+      "domain": "HMI",
+      "method": "CompileAndDiagnoseHmi",
+      "returnType": "",
+      "parameters": [
+        "softwarePath"
+      ],
+      "description": "[L1][HMI] Compile an HMI and return structured errors/warnings, the HMI counterpart of CompileAndDiagnosePlc. Use it after generating screens/tags so you can read the diagnostics and fix them yourself instead of asking the engineer to compile in the TIA UI. WinCC Unified: HmiSoftware is not compilable on its own, so the owning device is compiled (same as the TIA UI does) and hardware diagnostics may appear alongside screen ones. Classic (Comfort/KTP): the HMI software itself is compiled. Requires: Connect + OpenProject. softwarePath from GetProjectTree, e.g. 'HMI_RT_1'."
     },
     {
       "name": "CompileAndDiagnosePlc",

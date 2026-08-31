@@ -37,6 +37,10 @@ namespace TiaMcpServer.ModelContextProtocol
             "ScaffoldProject", "PlcBuildAndImport", "ImportBlock", "ImportType",
             "ImportPlcTagTable", "WritePlcSclSourceFile",
             "CompileSoftware", "CompileAndDiagnosePlc",
+            // The HMI counterpart. Without it a lite session can generate Unified screens but
+            // cannot read its own HMI compile errors, so it has to hand the project back to the
+            // engineer to compile in the UI (#24).
+            "CompileAndDiagnoseHmi",
             // L1 — hardware
             "AddDeviceWithFallback", "SearchHardwareCatalog", "ConnectDeviceNodesToProfinetSubnet",
             // Golden-path tools referenced by ServerInstructions / GetAuthoringGuide

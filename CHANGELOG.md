@@ -1,4 +1,55 @@
-# Change Log
+﻿# Change Log
+
+## [2.5.3] - 2026-08-31 - HMI 画面编译（#24）：AI 能自己读 HMI 的编译错误
+
+### 新增
+
+- **`CompileAndDiagnoseHmi`**（[#24](https://github.com/bulaofen0036-coder/TIA_Portal_Openness_MCP/issues/24)）
+  —— `CompileAndDiagnosePlc` 的 HMI 对应版本。生成完画面/变量之后可以直接编译并拿回
+  **结构化的错误与警告**（逐条带 `State` / `Description` / `Path`），模型据此自己改，
+  不必再让工程师去博途界面里手工编译、再把报错文本贴回来。
+
+  - **WinCC Unified**：`HmiSoftware` 自身不可编译，实际编译的是**它所属的设备** ——
+    这与你在博途界面里编译 HMI 时发生的事情一致。因此**硬件组态的诊断会和画面诊断
+    出现在同一份结果里**，这是预期行为，不是串味。
+  - **经典屏（精智 / Comfort）**：编译 HMI software 自身。
+
+  工具数 208 → 209；精简档（默认）48 → 49，新工具属于金路径，默认档即可直接调用。
+
+### 说明：这个功能是怎么被验出问题的
+
+第一版实现把「编译目标」判定为「该对象是不是 `IEngineeringServiceProvider`」。
+这在 PLC 与经典屏上都能过，**在 WinCC Unified 上却是坏的** —— Openness 里几乎所有对象
+都实现该接口，于是代码取到软件的直接父 `DeviceItem` 就收工，而那一层**并不持有**
+`ICompilable`；`GetService<T>()` 服务不存在时只返回 `null` 而不抛异常，于是失败发生在
+更靠后的地方，报出来是
+
+    HmiSoftware via DeviceItemImpl.GetService<ICompilable>() returned null
+
+正式判据因此改为「**它到底给不给得出 `ICompilable`**」，并沿 owner 链逐层向上查找
+（Unified PC 站是 `Device -> DeviceItem -> DeviceItem` 的嵌套，层数不该被写死）。
+若一路都找不到，错误信息会把走过的每一层及其结果一并列出。
+
+**发布前的真机验证**（TIA Portal V21，MTP700 Unified Basic 6AV2 123-3GB32-0AW0）：
+
+| 用例 | 结果 |
+|---|---|
+| Unified 屏（未配置起始画面，必然编译失败） | `State=Error`，`errorCount=3`，三条错误结构化返回（起始画面未配置 / 两条运行系统密码策略） |
+| 同工程内 S7-1513 PLC（回归） | `CompileAndDiagnosePlc` → `State=Success`，0 错 0 警 |
+
+先前仅在经典屏上验过 `Success 0/0`，**那只覆盖了 `HmiTarget` 一条分支**，不足以说明
+Unified 可用 —— 本版把两条分支分别验过才发布。
+
+### 修复
+
+- **编译诊断不再被静默吞掉**。`CompileAndDiagnosePlc` / `CompileAndDiagnoseHmi` 共用的
+  收集逻辑此前整体套在一个 `catch { }` 里。编译诊断是 Openness 代理对象树，代理可能在
+  遍历途中失效（切换工程、TIA 界面抢走句柄），集合代理一旦在枚举时抛异常，**已经读到的
+  诊断会连同异常一起被丢弃**，而 TIA 报出的 `errorCount` 仍是真实值。调用方看到的是
+  `errorCount: 5` 配上空的 `errors: []`，并且无从分辨「收集失败」与「本来就没有明细」。
+
+  现在逐条兜异常：能读到多少返回多少，读取过程中的问题写入 `info`
+  （前缀 `[诊断收集不完整]`），并新增 `meta.diagnosticsComplete` 布尔字段供程序判断。
 
 ## [2.5.2] - 2026-08-25 - 变量表列不出来（#22）+ 看门狗不再自己拉起博途
 

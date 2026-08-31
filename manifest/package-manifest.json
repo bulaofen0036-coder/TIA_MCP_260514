@@ -1,10 +1,10 @@
 ﻿{
   "schemaVersion": "2026-05-25",
-  "bundleVersion": "2.5.2",
-  "packageName": "TIA_MCP_Delivery_v2.5.2_20260825",
+  "bundleVersion": "2.5.3",
+  "packageName": "TIA_MCP_Delivery_v2.5.3_20260831",
   "packageType": "tia-portal-mcp-complete-offline-delivery-bundle",
   "generatedAt": "2026-05-31T20:30:00+08:00",
-  "refreshedAt": "2026-08-25T11:30:00+08:00",
+  "refreshedAt": "2026-08-31T17:00:00+08:00",
   "target": {
     "tiaPortalMajorVersion": [
       20,
@@ -84,7 +84,7 @@
     }
   },
   "capabilities": {
-    "mcpToolCount": 208,
+    "mcpToolCount": 209,
     "mcpToolLayers": {
       "L0": 9,
       "L1": 38,

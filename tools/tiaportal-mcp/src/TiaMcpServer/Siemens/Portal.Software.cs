@@ -7009,41 +7009,112 @@ namespace TiaMcpServer.Siemens
                 }
             }
 
-            if (softwareContainer?.Software is PlcSoftware plcSoftware)
+            // PlcSoftware and classic WinCC (HmiTarget) are themselves service providers, so the
+            // compiler service comes off the software object. WinCC Unified's HmiSoftware is NOT
+            // an IEngineeringServiceProvider (verified against the V21 PublicAPI) and exposes no
+            // Compile of its own — for Unified the compilable object is the owning device item,
+            // which is what the TIA UI compiles as well.
+            ICompilable compileService = ResolveCompileService(softwareContainer, softwarePath, out var targetKind);
+
+            try
             {
+                CompilerResult result = compileService.Compile();
+
+                if (result == null)
+                    throw new PortalException(PortalErrorCode.OpennessError, "ICompilable.Compile() returned null");
+
+                return result;
+            }
+            catch (PortalException)
+            {
+                throw;
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw new PortalException(PortalErrorCode.OpennessError, $"{tie.InnerException.GetType().FullName}: {tie.InnerException.Message}", null, tie.InnerException);
+            }
+            catch (Exception ex)
+            {
+                throw new PortalException(PortalErrorCode.OpennessError, $"{ex.GetType().FullName}: {ex.Message}", null, ex);
+            }
+        }
+
+        /// <summary>
+        /// Find the object that actually carries the ICompilable service for a software path,
+        /// and return that service.
+        ///
+        /// PlcSoftware and classic WinCC (HmiTarget) carry it themselves. WinCC Unified's
+        /// HmiSoftware does not — for Unified the compilable object sits further up the
+        /// ownership chain (the HMI device), which is what the TIA UI compiles too.
+        ///
+        /// The judgement must be "does this object actually hand out ICompilable", NOT
+        /// "is this object an IEngineeringServiceProvider" — in Openness practically
+        /// everything implements that interface, while GetService&lt;T&gt;() just returns
+        /// **null** when the service is absent instead of throwing. Testing the interface
+        /// therefore picks the first ancestor unconditionally and then fails with a null
+        /// service. Real-machine 2026-08-31, MTP700 Unified Basic on V21: the software's
+        /// immediate parent DeviceItem passed the interface test and yielded a null
+        /// service, so Unified compiles failed with
+        /// "HmiSoftware via DeviceItemImpl.GetService&lt;ICompilable&gt;() returned null"
+        /// — i.e. exactly the panel type this tool was added for.
+        ///
+        /// So: walk up from the software and take the first level that really provides
+        /// the service. Walking is also depth-proof — Unified PC stations nest
+        /// Device → DeviceItem → DeviceItem, and that nesting is not ours to predict.
+        /// </summary>
+        private ICompilable ResolveCompileService(SoftwareContainer? softwareContainer, string softwarePath, out string targetKind)
+        {
+            var software = softwareContainer?.Software;
+            if (software == null)
+                throw new PortalException(PortalErrorCode.NotFound, $"SoftwareContainer or Software not found for path '{softwarePath}'");
+
+            // 走过的每一层都记下来：找不到时把这串报出去，下一个人不用再猜层级。
+            var probed = new List<string>();
+
+            ICompilable? Probe(object? candidate, string kind)
+            {
+                if (candidate is not IEngineeringServiceProvider provider) return null;
+                ICompilable? service;
                 try
                 {
-                    ICompilable? compileService = plcSoftware.GetService<ICompilable>();
-                    if (compileService == null)
-                        throw new PortalException(PortalErrorCode.OpennessError, "plcSoftware.GetService<ICompilable>() returned null");
-
-                    CompilerResult result = compileService.Compile();
-
-                    if (result == null)
-                        throw new PortalException(PortalErrorCode.OpennessError, "ICompilable.Compile() returned null");
-
-                    return result;
-                }
-                catch (PortalException)
-                {
-                    throw;
-                }
-                catch (TargetInvocationException tie) when (tie.InnerException != null)
-                {
-                    throw new PortalException(PortalErrorCode.OpennessError, $"{tie.InnerException.GetType().FullName}: {tie.InnerException.Message}", null, tie.InnerException);
+                    service = provider.GetService<ICompilable>();
                 }
                 catch (Exception ex)
                 {
-                    throw new PortalException(PortalErrorCode.OpennessError, $"{ex.GetType().FullName}: {ex.Message}", null, ex);
+                    // 代理对象可能已失效；这一层探不了不代表上一层探不了，记下继续往上。
+                    probed.Add($"{kind}(threw {ex.GetType().Name})");
+                    return null;
                 }
+                probed.Add($"{kind}{(service == null ? "(no ICompilable)" : "(OK)")}");
+                return service;
             }
 
-            var resolvedSoftware = softwareContainer?.Software;
+            var direct = Probe(software, software.GetType().Name);
+            if (direct != null)
+            {
+                targetKind = software.GetType().Name;
+                return direct;
+            }
+
+            // 从软件容器往上爬。上限 8 层纯属防御：真实层级是 3~4 层，
+            // 加个上限只是不想在代理对象出怪时把自己转死在循环里。
+            object? node = softwareContainer;
+            for (int depth = 0; node != null && depth < 8; depth++)
+            {
+                var kind = $"{software.GetType().Name} via {node.GetType().Name}";
+                var service = Probe(node, kind);
+                if (service != null)
+                {
+                    targetKind = kind;
+                    return service;
+                }
+                node = (node as IEngineeringObject)?.Parent;
+            }
+
             throw new PortalException(
-                resolvedSoftware == null ? PortalErrorCode.NotFound : PortalErrorCode.InvalidState,
-                resolvedSoftware == null
-                    ? $"SoftwareContainer or Software not found for path '{softwarePath}'"
-                    : $"Software at '{softwarePath}' is not PlcSoftware. Type={resolvedSoftware.GetType().FullName}");
+                PortalErrorCode.InvalidState,
+                $"Software at '{softwarePath}' ({software.GetType().FullName}) is not compilable: " +
+                $"neither it nor any owner up to 8 levels provides ICompilable. Probed: {string.Join(" -> ", probed)}");
         }
 
         #endregion

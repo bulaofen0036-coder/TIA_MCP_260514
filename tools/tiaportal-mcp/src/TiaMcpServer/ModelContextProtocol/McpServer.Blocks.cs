@@ -571,25 +571,36 @@ namespace TiaMcpServer.ModelContextProtocol
         public static ResponseCompileDiagnose CompileAndDiagnosePlc(
             [Description("softwarePath: PLC software path, e.g. 'PLC_1'")] string softwarePath,
             [Description("password: optional safety password")] string password = "")
+            => CompileAndDiagnoseCore(softwarePath, password);
+
+        /// <summary>
+        /// Shared body of the compile-and-diagnose tools: compile one software and return the
+        /// CompilerResult flattened into structured errors/warnings. The PLC and HMI tools differ
+        /// only in the software they are pointed at, so they must not diverge here.
+        /// </summary>
+        private static ResponseCompileDiagnose CompileAndDiagnoseCore(string softwarePath, string password)
         {
             try
             {
                 var result = Portal.CompileSoftware(softwarePath, password);
 
-                var raw = new List<string>();
-                var errs = new List<string>();
-                var warns = new List<string>();
-                var info = new List<string>();
+                // 收集不再吞：CollectCompilerMessages 内部逐条兜异常，把能拿到的都拿回来，
+                // 拿不到的记进 CollectFailures。以前这里是 try{...}catch{} —— 一抛就
+                // 「errorCount=5, errors: []」，模型看得到数字却拿不到任何一条，
+                // 还分不清是收集炸了还是本来就没明细。那正好把这个工具的立意废掉。
+                var collected = CollectCompilerMessages(result.Messages);
+                var raw = collected.Raw;
+                var errs = collected.Errors;
+                var warns = collected.Warnings;
+                var info = collected.Info;
 
-                try
+                if (collected.CollectFailures.Count > 0)
                 {
-                    var collected = CollectCompilerMessages(result.Messages);
-                    raw = collected.Raw;
-                    errs = collected.Errors;
-                    warns = collected.Warnings;
-                    info = collected.Info;
+                    // 放进 info 让人/模型直接看见，别只藏在 meta 里。
+                    info = new List<string>(info);
+                    foreach (var f in collected.CollectFailures)
+                        info.Add("State=Information; Description=[诊断收集不完整] " + f);
                 }
-                catch { }
 
                 return new ResponseCompileDiagnose
                 {
@@ -606,7 +617,10 @@ namespace TiaMcpServer.ModelContextProtocol
                         ["timestamp"] = DateTime.Now,
                         ["success"] = !result.State.ToString().Equals("Error", StringComparison.OrdinalIgnoreCase),
                         ["errorDetailCount"] = errs.Count,
-                        ["warningDetailCount"] = warns.Count
+                        ["warningDetailCount"] = warns.Count,
+                        // 明细少于 TIA 报的条数时，调用方需要知道是「收集出了问题」
+                        // 还是「本来就没有明细」—— 这两种以前长得一模一样。
+                        ["diagnosticsComplete"] = collected.CollectFailures.Count == 0
                     }
                 };
             }
