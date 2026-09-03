@@ -14,7 +14,6 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 using TiaMcpServer.Siemens;
 
 
@@ -302,7 +301,14 @@ namespace TiaMcpServer.ModelContextProtocol
                 }
                 catch (Exception ex)
                 {
-                    Logger?.LogDebug(ex, "Failed to evaluate .s7res warnings");
+                    // Never silently swallow: a pre-check that cannot run must say so,
+                    // otherwise "no warnings" is indistinguishable from "check crashed".
+                    Logger?.LogWarning(ex, "Failed to evaluate .s7res warnings");
+                    warnings.Add(new JsonObject
+                    {
+                        ["name"] = fileNameWithoutExtension,
+                        ["precheckError"] = ex.Message
+                    });
                 }
 
                 var ok = WithAutoOffline(() => Portal.ImportFromDocuments(softwarePath, groupPath, importPath, fileNameWithoutExtension, option));
@@ -396,11 +402,21 @@ namespace TiaMcpServer.ModelContextProtocol
                                     });
                                 }
                             }
-                            catch { }
+                            catch (Exception rex)
+                            {
+                                scanWarnings.Add(new JsonObject
+                                {
+                                    ["name"] = name,
+                                    ["precheckError"] = rex.Message
+                                });
+                            }
                         }
                     }
                 }
-                catch { /* ignore pre-scan errors */ }
+                catch (Exception sex)
+                {
+                    scanWarnings.Add(new JsonObject { ["scanError"] = sex.Message });
+                }
 
                 if (progressToken != null)
                 {
@@ -694,28 +710,10 @@ namespace TiaMcpServer.ModelContextProtocol
             }
         }
 
+        // .s7res is YAML, not XML — see S7ResScanner for why the old XDocument-based
+        // implementation threw on every real file and never produced a single warning.
         private static List<string> GetResMissingEnUsIds(string directory, string baseName)
-        {
-            var resPath = Path.Combine(directory, baseName + ".s7res");
-            var missing = new List<string>();
-            if (!File.Exists(resPath))
-            {
-                return missing;
-            }
-            var xdoc = XDocument.Load(resPath);
-            XNamespace ns = xdoc.Root?.Name.Namespace ?? XNamespace.None;
-            foreach (var comment in xdoc.Descendants(ns + "Comment"))
-            {
-                var hasEnUs = comment.Elements(ns + "MultiLanguageText")
-                                     .Any(e => string.Equals((string?)e.Attribute("Lang"), "en-US", StringComparison.OrdinalIgnoreCase));
-                if (!hasEnUs)
-                {
-                    var id = (string?)comment.Attribute("Id") ?? "";
-                    missing.Add(id);
-                }
-            }
-            return missing;
-        }
+            => S7ResScanner.GetMissingEnUsIds(directory, baseName);
 
         #endregion
     }

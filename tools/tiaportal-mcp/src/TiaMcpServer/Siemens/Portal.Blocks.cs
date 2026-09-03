@@ -157,13 +157,19 @@ namespace TiaMcpServer.Siemens
             return block.Name;
         }
 
-        public List<PlcBlock> GetBlocks(string softwarePath, string regexName = "")
+        /// <summary>
+        /// 取块清单。**没打开项目时返回 null，不是空列表** —— 这两件事对调用方完全不同：
+        /// 空列表意味着「这个 PLC 里确实没有块」，null 意味着「根本没查成」。
+        /// 以前返回 `[]`，于是工具层那句 `if (list != null)` 恒为真、`else throw` 永不执行，
+        /// 离线调用得到「成功，0 个块」—— 调用方据此认定这个 PLC 是空的，继续往下走。
+        /// </summary>
+        public List<PlcBlock>? GetBlocks(string softwarePath, string regexName = "")
         {
             _logger?.LogInformation("Getting blocks...");
 
             if (IsProjectNull())
             {
-                return [];
+                return null;
             }
 
             var list = new List<PlcBlock>();
@@ -214,13 +220,14 @@ namespace TiaMcpServer.Siemens
             return null;
         }
 
-        public List<PlcType> GetTypes(string softwarePath, string regexName = "")
+        /// <summary>同 GetBlocks：没打开项目时返回 null，别把「没查成」伪装成「确实没有」。</summary>
+        public List<PlcType>? GetTypes(string softwarePath, string regexName = "")
         {
             _logger?.LogInformation("Getting types...");
 
             if (IsProjectNull())
             {
-                return [];
+                return null;
             }
 
             var list = new List<PlcType>();
@@ -615,7 +622,7 @@ namespace TiaMcpServer.Siemens
 
             try
             {
-                list = GetBlocks(softwarePath, regexName).ToArray();
+                list = (GetBlocks(softwarePath, regexName) is { } got ? got.ToArray() : []);
             }
             catch (Exception ex)
             {
@@ -737,7 +744,7 @@ namespace TiaMcpServer.Siemens
 
             try
             {
-                list = GetTypes(softwarePath, regexName).ToArray();
+                list = (GetTypes(softwarePath, regexName) is { } got ? got.ToArray() : []);
             }
             catch (Exception ex)
             {
@@ -999,7 +1006,7 @@ namespace TiaMcpServer.Siemens
             PlcBlock[] list;
             try
             {
-                list = GetBlocks(softwarePath, regexName).ToArray();
+                list = (GetBlocks(softwarePath, regexName) is { } got ? got.ToArray() : []);
             }
             catch (Exception ex)
             {

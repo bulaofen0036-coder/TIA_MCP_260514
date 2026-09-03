@@ -78,6 +78,18 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 var list = Portal.GetBlocks(softwarePath, regexName);
 
+                // null = 根本没查成（没连接/没打开项目）；空列表 = 这个 PLC 里确实没有。
+                // 以前 Portal 层无项目时返回空列表，两件事被同一个值表示，于是下面那句
+                // `if (list != null)` 恒为真、`else throw` 永不执行，离线调用得到「成功，0 个」。
+                if (list == null)
+                {
+                    throw new McpException(
+                        $"No TIA project is open, cannot list blocks of '{softwarePath}'. "
+                        + "Call Connect / OpenProject (or AttachToOpenProject) first. "
+                        + "This does NOT mean the PLC has no blocks.",
+                        McpErrorCode.InvalidParams);
+                }
+
                 var responseList = new List<ResponseBlockInfo>();
                 foreach (var block in list)
                 {
