@@ -25,6 +25,22 @@ namespace TiaMcpServer.ModelContextProtocol
     {
         #region documents
 
+        /// <summary>
+        /// 扫描到了 .s7dcl 但一份都没导进去时附给调用方的自救步骤。
+        /// 只引用本版本真实存在的工具，别指向不存在的东西再把人带偏一次。
+        /// </summary>
+        internal const string DocumentImportHelp =
+            "\r\n按这个顺序处理，别改语法瞎猜：\r\n"
+            + "1) GetAuthoringGuide(topic:'lad')（SCL 用 'scl'）—— 拿到本引擎验证过的语法与编码规则，"
+            + "把你的文件逐条对齐；只改名字和操作数，别改结构。\r\n"
+            + "2) .s7dcl 是**原子失败**：整份文档任何一处不合法都整份不导入，Openness 不给行号。"
+            + "所以一次只放一个 NETWORK，导入→编译通过→再加下一段。整份写完再导，出错时没有任何定位信息。\r\n"
+            + "3) 一个 NETWORK = 一个程序段；同一个 NETWORK 里的多条 RUNG 是同一段的并联分支。"
+            + "要 12 段就写 12 个 NETWORK。\r\n"
+            + "4) 编码必须 UTF-8 **带 BOM**。别把 BOM 的转义序列当成六个字符写进文件正文 —— "
+            + "那是转义没生效，不是 BOM。\r\n"
+            + "5) 只需要 DB / UDT / 变量表的话，改走 PlcBuildAndImport 的 JSON 路，完全绕开 .s7dcl。";
+
         [McpServerTool(Name = "ExportAsDocuments"), Description("[L2][PLC-Software] PREFERRED on V21+ for exporting one block. Exports a single program block to SIMATIC SD textual / SCL document format (.s7dcl + .s7res) — far more readable/diff-friendly than SimaticML XML (ExportBlock). Requires TIA Portal V20 or newer.")]
         public static ResponseExportAsDocuments ExportAsDocuments(
             [Description("softwarePath: defines the path in the project structure to the plc software")] string softwarePath,
@@ -442,17 +458,64 @@ namespace TiaMcpServer.ModelContextProtocol
                 var duration = (DateTime.Now - startTime).TotalSeconds;
                 Logger?.LogInformation($"Document import completed: {processed} blocks imported in {duration:F2} seconds");
 
+                // 逐文件失败原因必须回给调用方。以前这些异常只进日志，响应是
+                // 「0 blocks imported，无警告」—— 调用方据此得出的结论是「服务器坏了」，
+                // 而真相通常只是文档里一个元素不合法。Openness 对 .s7dcl 原子失败且不给行号，
+                // 这点异常文本是**唯一**的线索，不能吞。
+                var failures = Portal.LastImportFromDocumentsFailures;
+                int scanned = Portal.LastImportFromDocumentsScanned;
+                var failArr = new JsonArray();
+                foreach (var f in failures.Take(50)) failArr.Add(f);
+
+                // 四种「0 块」的病因完全不同，必须分开说 —— 报同一句话就是把人往错方向带。
+                string msg;
+                bool ok;
+                if (processed > 0)
+                {
+                    msg = $"Document import completed: {processed} blocks imported from '{importPath}'"
+                        + (failures.Count > 0 ? $"；另有 {failures.Count} 个文件失败（见 meta.failures）" : "");
+                    ok = true;
+                }
+                else if (imported == null)
+                {
+                    // Portal 层只有「没连上/没打开项目」和「版本不够」两条路返回 null。
+                    // 以前这会被误报成「目录里没文件」，让人去查一个根本没问题的路径。
+                    msg = "没有连接到 TIA Portal 项目，导入根本没开始。先调用 Connect / OpenProject "
+                        + "（或 AttachToOpenProject 接管已打开的工程），再重试。";
+                    ok = false;
+                }
+                else if (!Directory.Exists(importPath))
+                {
+                    msg = $"导入目录 '{importPath}' 不存在。检查路径拼写，以及它是否指向**目录**而不是单个文件。";
+                    ok = false;
+                }
+                else if (scanned == 0)
+                {
+                    msg = $"目录 '{importPath}' 里一个 .s7dcl 文件都没有，所以没有东西可导。"
+                        + "检查文件扩展名是否为 .s7dcl（.scl 走 GenerateBlocksFromExternalSource）。";
+                    ok = false;
+                }
+                else
+                {
+                    msg = $"扫描到 {scanned} 个 .s7dcl，**一个都没导进去**。逐份原因见 meta.failures。"
+                        + DocumentImportHelp;
+                    ok = false;
+                }
+
                 return new ResponseImportBlocksFromDocuments
                 {
-                    Message = $"Document import completed: {processed} blocks imported from '{importPath}'",
+                    Message = msg,
                     Items = responseList,
                     Meta = new JsonObject
                     {
                         ["timestamp"] = DateTime.Now,
-                        ["success"] = true,
+                        // 一份都没导进去时不能报 success=true —— 那正是「看着绿、其实什么也没发生」。
+                        ["success"] = ok,
                         ["totalBlocks"] = total,
+                        ["scannedFiles"] = scanned,
                         ["importedBlocks"] = processed,
                         ["duration"] = duration,
+                        ["failures"] = failArr,
                         ["warnings"] = scanWarnings
                     }
                 };

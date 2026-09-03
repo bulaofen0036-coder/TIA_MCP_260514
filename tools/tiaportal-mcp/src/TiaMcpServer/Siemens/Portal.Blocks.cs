@@ -1259,9 +1259,26 @@ namespace TiaMcpServer.Siemens
             return null;
         }
 
+        /// <summary>
+        /// 上一次 <see cref="ImportBlocksFromDocuments"/> 里**逐文件失败的原因**。
+        ///
+        /// 这个属性存在的理由：原来每个文件的导入异常只 `LogWarning` 就吞掉，函数返回空列表，
+        /// 工具层于是报「0 blocks imported，无警告」—— 调用方（尤其是弱模型）只能得出
+        /// 「这个服务器坏了」的结论，而真相往往只是文档里某一个元素不合法。
+        /// Openness 对 .s7dcl 是**原子失败且不给行号**的，把仅有的这点异常文本也扔掉，
+        /// 等于把唯一的诊断线索销毁。
+        /// </summary>
+        public IReadOnlyList<string> LastImportFromDocumentsFailures { get; private set; } = new List<string>();
+
+        /// <summary>上一次扫描到的 .s7dcl 文件数（未经 regex 过滤）。0 和「都失败了」是两回事。</summary>
+        public int LastImportFromDocumentsScanned { get; private set; }
+
         public IEnumerable<PlcBlock>? ImportBlocksFromDocuments(string softwarePath, string groupPath, string importPath, string regexName, ImportDocumentOptions option, bool preservePath = false)
         {
             _logger?.LogInformation($"Importing blocks from documents in {importPath} with regex '{regexName}'");
+            var failures = new List<string>();
+            LastImportFromDocumentsFailures = failures;
+            LastImportFromDocumentsScanned = 0;
 
             if (IsProjectNull())
             {
@@ -1295,11 +1312,15 @@ namespace TiaMcpServer.Siemens
 
                     // Consider .s7dcl as the primary index; .s7res is optional supplemental
                     var files = dir.GetFiles("*.s7dcl", SearchOption.TopDirectoryOnly);
+                    LastImportFromDocumentsScanned = files.Length;
                     foreach (var file in files)
                     {
                         var name = Path.GetFileNameWithoutExtension(file.Name);
                         if (rx != null && !rx.IsMatch(name))
                         {
+                            // 被 regex 滤掉也要留痕：「文件在、但被你自己的 regexName 挡了」
+                            // 和「文件不合法」是完全不同的两件事，报同一个 0 会把人带偏。
+                            failures.Add($"{name}: 被 regexName '{regexName}' 过滤，未尝试导入");
                             continue;
                         }
 
@@ -1319,14 +1340,22 @@ namespace TiaMcpServer.Siemens
                                     }
                                 }
                             }
+                            else
+                            {
+                                // State 不是 Success 也是失败，只是不抛异常 —— 以前这条路径连日志都没有。
+                                failures.Add($"{name}: ImportFromDocuments 返回 state="
+                                             + (result?.State.ToString() ?? "null") + "，整份文档未导入");
+                            }
                         }
                         catch (EngineeringNotSupportedException ex)
                         {
                             _logger?.LogWarning(ex, "Skipping '{Name}': not supported (likely mixed languages)", name);
+                            failures.Add($"{name}: 本版本不支持（常见于混编语言）—— {ex.Message}");
                         }
                         catch (Exception ex)
                         {
                             _logger?.LogWarning(ex, "Skipping '{Name}' due to import error", name);
+                            failures.Add($"{name}: {ex.Message}");
                         }
                     }
                 }
