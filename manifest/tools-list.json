@@ -1,8 +1,8 @@
 {
   "package": "TIA_MCP_Delivery_v2.4.0",
-  "generatedAt": "2026-09-04T16:02:40.801659+08:00",
+  "generatedAt": "2026-09-04T17:41:05.740603+08:00",
   "source": "live MCP tools/list of TiaMcpServer.exe",
-  "toolCount": 209,
+  "toolCount": 221,
   "note": "Full roster (--profile full). The default lite profile lists ~49 of these; the rest stay reachable via FindTools + CallTool. Runtime tools/list remains authoritative.",
   "tools": [
     {
@@ -419,6 +419,17 @@
       "description": "[L1][Category:PLC-Online][PreCondition:Connect+OpenProject+CompileSoftware] Check whether a PLC is ready to receive a program download WITHOUT actually downloading. Verifies: DownloadProvider service is available, a network/IP configuration exists in the hardware config. Returns Ready=true only when all checks pass. Use this before DownloadToPlc to surface problems early (missing IP, no hardware config, etc.). Meta.downloadRoutes lists every PG/PC interface -> CPU route (best-ranked first, preferred=true when the adapter shares a subnet with the CPU) — check it on a multi-NIC PC (WLAN/VPN/PLCSIM) before downloading. Does NOT compile — run CompileSoftware first to ensure blocks are consistent."
     },
     {
+      "name": "ClearExports",
+      "layer": "L1",
+      "domain": "Exports",
+      "method": "ClearExports",
+      "returnType": "",
+      "parameters": [
+        "olderThanHours"
+      ],
+      "description": "[L1][Exports] Drop parked responses in bulk. NOTE: handles already expire on their own at 24h, so the default olderThanHours=24 almost always deletes nothing — pass olderThanHours=0 to actually free the store now."
+    },
+    {
       "name": "CloseProject",
       "layer": "L1",
       "domain": "Project",
@@ -583,6 +594,30 @@
       "description": "[L2][VersionControl] Create a VCI workspace pointing at a folder on disk — normally the working tree of a Git repository, so every synchronized export lands where Git can commit it. Creating the workspace does NOT map any objects into it — call ConnectProjectToWorkspace afterwards to map the whole project (or one device) automatically. Requires TIA V21+ and an open project."
     },
     {
+      "name": "DeleteExport",
+      "layer": "L1",
+      "domain": "Exports",
+      "method": "DeleteExport",
+      "returnType": "",
+      "parameters": [
+        "exportId"
+      ],
+      "description": "[L1][Exports] Drop one export handle once you are done with it. Optional — handles expire on their own after 24 hours and the oldest are evicted automatically when the store fills up."
+    },
+    {
+      "name": "DeletePlcBlock",
+      "layer": "L2",
+      "domain": "PLC-Software",
+      "method": "DeletePlcBlock",
+      "returnType": "",
+      "parameters": [
+        "softwarePath",
+        "blockPath",
+        "dryRun"
+      ],
+      "description": "[L2][PLC-Software][Destructive] Preview or delete exactly one PLC block by its exact path, including blocks inside nested groups. THIS IS ALSO THE TOOL FOR DELETING A DATA BLOCK: global DB, instance DB, ARRAY DB, FB, FC and OB are all PLC blocks, so there is no separate DeleteGlobalDb / DeleteDb / DeleteFunctionBlock tool - use this one. Defaults to dryRun=true, which changes nothing and reports the resolved target plus its cross references. It never deletes instance DBs or callers automatically. Before dryRun=false, review the previewed cross references (or run GetCrossReferences) and back the block up with ExportAsDocuments; compile with CompileSoftware after deletion and before SaveProject. Regex and wildcards are rejected. To delete a tag table use DeletePlcTagTable, a UDT use DeletePlcType."
+    },
+    {
       "name": "DeletePlcExternalSource",
       "layer": "L2",
       "domain": "PLC-Software",
@@ -593,6 +628,32 @@
         "externalSourceName"
       ],
       "description": "[L2][PLC-Software]Delete a PLC external source by name so ImportPlcExternalSource can replace it (idempotent). Name may include or omit .scl."
+    },
+    {
+      "name": "DeletePlcTagTable",
+      "layer": "L2",
+      "domain": "PLC-Software",
+      "method": "DeletePlcTagTable",
+      "returnType": "",
+      "parameters": [
+        "softwarePath",
+        "tagTableName",
+        "dryRun"
+      ],
+      "description": "[L2][PLC-Software][Destructive] Preview or delete ONE PLC tag table (variable table / tag list) by name, including tables nested in user groups. Defaults to dryRun=true, which only reports what the table contains and deletes nothing. DANGER: deleting a tag table removes the SYMBOLS of every tag in it. HMI panels bind PLC tags by symbolic name, so the PLC may still compile clean while the HMI silently loses its bindings - always review the previewed tag list and cross references first. The default tag table (IsDefault) is refused. Cross references are attempted but may be unavailable at tag-table level; the response says explicitly whether they were obtained. Regex and wildcards are rejected. Back up first with ExportPlcTagTable."
+    },
+    {
+      "name": "DeletePlcType",
+      "layer": "L2",
+      "domain": "PLC-Software",
+      "method": "DeletePlcType",
+      "returnType": "",
+      "parameters": [
+        "softwarePath",
+        "typePath",
+        "dryRun"
+      ],
+      "description": "[L2][PLC-Software][Destructive] Preview or delete ONE PLC user data type (UDT / PlcType) by its exact path. Defaults to dryRun=true. Deleting a UDT breaks every DB and block interface declared with it, so the preview reports its cross references (GetCrossReferences works at type level) before you commit - review them first. Regex and wildcards are rejected. Export the type first with ExportType, and CompileSoftware afterwards."
     },
     {
       "name": "DescribeBlockLogic",
@@ -1356,6 +1417,17 @@
       "description": "[L2][Hardware]Get info from a device item from the current project/session"
     },
     {
+      "name": "GetDeviceItemIoAddresses",
+      "layer": "L2",
+      "domain": "Hardware",
+      "method": "GetDeviceItemIoAddresses",
+      "returnType": "",
+      "parameters": [
+        "deviceItemPath"
+      ],
+      "description": "[L2][Hardware] READ-ONLY. List the I/O addresses of one device item (signal module, signal board, built-in CPU I/O). Returns each address as ioType + startAddress + length in ENGINE RAW VALUES (startAddress is the byte offset: %I2.0 is startAddress 2). Use this to confirm an address before and after changing it. Device item path looks like 'PLC_1/DI 8x24VDC_1' — get it from GetDeviceItemTree."
+    },
+    {
       "name": "GetDeviceItemNetworkInfo",
       "layer": "L2",
       "domain": "Hardware",
@@ -1379,6 +1451,17 @@
       "description": "[L2][Hardware]Get a subtree view for a device item (hardware components + sub device items)"
     },
     {
+      "name": "GetDevicePlugLocations",
+      "layer": "L2",
+      "domain": "Hardware",
+      "method": "GetDevicePlugLocations",
+      "returnType": "",
+      "parameters": [
+        "deviceItemPath"
+      ],
+      "description": "[L2][Hardware] READ-ONLY. List the plug slots of one device item: which slot numbers are FREE (as reported by TIA at runtime) and which are already OCCUPIED (by name / order number / built-in). Call this BEFORE plugging a signal board (SB), signal module (SM) or communication module (CM) so the slot / position number comes from TIA instead of a guess — slot numbers differ per CPU family and are never hardcoded by this server. A signal board plugs into the CPU device item itself, so pass the CPU path (e.g. 'PLC_1'). Get paths from GetDeviceItemTree."
+    },
+    {
       "name": "GetDevices",
       "layer": "L1",
       "domain": "Hardware",
@@ -1386,6 +1469,19 @@
       "returnType": "",
       "parameters": [],
       "description": "[L1][Hardware] List all hardware devices (PLCs, HMI panels, drives) in the project with their attributes. Requires: Connect + OpenProject. Prefer GetProjectTree for a visual overview; use this when you need the exact device Name and attribute values for subsequent operations like AddDevice or SetDeviceItemAttribute."
+    },
+    {
+      "name": "GetExport",
+      "layer": "L1",
+      "domain": "Exports",
+      "method": "GetExport",
+      "returnType": "",
+      "parameters": [
+        "exportId",
+        "offset",
+        "length"
+      ],
+      "description": "[L1][Exports] Read one page of a large response that was parked under an export handle. When a tool's response exceeds the size limit the engine stores the full text and returns only its head plus an 'exportId'; call this with that id to read the rest. Page forward by passing the 'nextOffset' from the previous page until 'eof' is true. Each page is a raw CHARACTER SLICE of the original text — it can cut a line or a JSON value in half. Concatenate every page first, THEN parse; never parse a single page on its own. Handles live for 24 hours and only inside the current engine session."
     },
     {
       "name": "GetHmiConnections",
@@ -2012,6 +2108,18 @@
       "description": "[L2][Reflection]GetService bridge: invoke a method on a service object (by type name suffix) from a target object."
     },
     {
+      "name": "ListExports",
+      "layer": "L1",
+      "domain": "Exports",
+      "method": "ListExports",
+      "returnType": "",
+      "parameters": [
+        "tool",
+        "limit"
+      ],
+      "description": "[L1][Exports] List the export handles currently held by this engine session — id, the tool that produced each one, its target, age, and total size. Use it when you have lost an exportId, or to check what is still available before paging."
+    },
+    {
       "name": "ListObjectChildren",
       "layer": "L2",
       "domain": "Reflection",
@@ -2156,6 +2264,22 @@
         "dryRun"
       ],
       "description": "[L1][PLC-Software] MAIN tool for creating new PLC blocks from natural language. Build one PLC artifact (UDT/tag table/GlobalDB/FC/FB) from structured JSON, then optionally import and compile. Use dryRun=true first to validate. Workflow: describe block in JSON → dryRun → review → dryRun=false to import. Replaces the multi-step Build*Xml + ImportBlock sequence."
+    },
+    {
+      "name": "PlugDeviceItem",
+      "layer": "L2",
+      "domain": "Hardware",
+      "method": "PlugDeviceItem",
+      "returnType": "",
+      "parameters": [
+        "deviceItemPath",
+        "orderNumber",
+        "version",
+        "positionNumber",
+        "name",
+        "dryRun"
+      ],
+      "description": "[L2][Hardware][Destructive] Insert a SUBMODULE into an existing device: signal board (SB, e.g. SB 1221 6ES7221-3BD30-0XB0), signal module (SM), or communication module (CM). This is the 'InsertDeviceItem' / 'AddSignalBoard' operation — AddDevice only creates whole stations and cannot plug boards into a CPU. Defaults to dryRun=true, which runs a REAL TIA feasibility check (CanPlugNew) without writing. Pass positionNumber=-1 to let the server pick a free slot reported by TIA; slot numbers are never hardcoded — use GetDevicePlugLocations to see them. After a successful plug the module is read back and verified (IsPlugged / name / slot). This tool does NOT set addresses: to make the inputs start at %I2.0, call SetDeviceItemIoAddress afterwards with startAddress=2, then CompileSoftware and SaveProject. Failures are reported by category: SlotOccupied, SlotNotAvailable, OrderNumberNotFound, NotSupportedByDevice, PlugFailed, VerifyFailed."
     },
     {
       "name": "ProbeGlobalLibrary",
@@ -2411,6 +2535,20 @@
       "description": "[L2][Project]Save current TIA-Portal project/session with a new name"
     },
     {
+      "name": "SaveExport",
+      "layer": "L1",
+      "domain": "Exports",
+      "method": "SaveExport",
+      "returnType": "",
+      "parameters": [
+        "exportId",
+        "outputPath",
+        "raw",
+        "overwrite"
+      ],
+      "description": "[L1][Exports] Write a parked response to a file in one step, instead of paging it through the conversation. Prefer this whenever the user wants the whole thing (a full cross-reference dump, a whole block list, a whole block export): it costs one call and no context. By default the tool's PAYLOAD is written (e.g. the CSV itself), not the JSON envelope around it — so saving a truncated table to 'IO.csv' really gives you a CSV you can open in Excel. Pass raw=true to write the untouched response text instead. Written as UTF-8 with BOM so Chinese opens correctly in Notepad and Excel."
+    },
+    {
       "name": "SaveProject",
       "layer": "L1",
       "domain": "Project",
@@ -2493,6 +2631,20 @@
         "value"
       ],
       "description": "[L2][Hardware]Set one exact DeviceItem attribute by name with type coercion and detailed error return. Use GetDeviceItemInfo/GetDeviceItemNetworkInfo first."
+    },
+    {
+      "name": "SetDeviceItemIoAddress",
+      "layer": "L2",
+      "domain": "Hardware",
+      "method": "SetDeviceItemIoAddress",
+      "returnType": "",
+      "parameters": [
+        "deviceItemPath",
+        "ioType",
+        "startAddress",
+        "dryRun"
+      ],
+      "description": "[L2][Hardware][Destructive] Preview or change the I/O START ADDRESS of one device item (e.g. move a DI module to start at %I2.0 by passing startAddress=2). Defaults to dryRun=true. startAddress is the ENGINE RAW byte offset, not '2.0'. It writes hardware configuration, so a wrong value does NOT fail compilation — the program silently reads a different module. Read back with GetDeviceItemIoAddresses, then CompileSoftware and SaveProject. Overlapping address ranges are rejected by TIA and reported back with the reason."
     },
     {
       "name": "SetOpcUaInterfaceEnabled",
