@@ -1380,75 +1380,77 @@ namespace TiaMcpServer.Siemens
             return anySuccess;
         }
 
-        private bool GetBlocksRecursive(PlcBlockGroup group, List<PlcBlock> list, string regexName = "")
+        // 返回值曾经是 bool anySuccess，但它**算了没人看**：两个调用点都丢弃返回值，
+        // 而且子组那一行写的是 `anySuccess = 递归(...)` —— 覆盖而非累积，最终只反映最后一个子组。
+        // 一个既没人读、读了也是错的值，留着只会让人以为这里有个「有没有找到」的信号。
+        private void GetBlocksRecursive(PlcBlockGroup group, List<PlcBlock> list, string regexName = "")
         {
-            var anySuccess = false;
+            // 正则一次编译好。原来是逐块 try/catch：模式写错时每个块都被 catch 掉、
+            // 最后返回空列表，对外表现成「这个 PLC 里没有匹配的块」—— 把「你的模式非法」
+            // 说成了一个具体的、错的事实。
+            var filter = CompileNameFilterOrThrow(regexName);
 
             foreach (var composition in group.Blocks)
             {
                 if (composition is PlcBlock block)
                 {
-                    try
+                    if (filter != null && !filter.IsMatch(block.Name))
                     {
-                        if (!string.IsNullOrEmpty(regexName) && !Regex.IsMatch(block.Name, regexName, RegexOptions.IgnoreCase))
-                        {
-                            continue; // Skip this block if it doesn't match the pattern
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // Invalid regex pattern, skip this block
-                        continue;
+                        continue; // Skip this block if it doesn't match the pattern
                     }
 
                     list.Add(block);
-
-                    anySuccess = true;
                 }
             }
 
             foreach (var subgroup in group.Groups)
             {
-                anySuccess = GetBlocksRecursive(subgroup, list, regexName);
+                GetBlocksRecursive(subgroup, list, regexName);
             }
-
-            return anySuccess;
         }
 
-        private bool GetTypesRecursive(PlcTypeGroup group, List<PlcType> list, string regexName = "")
+        /// <summary>
+        /// 把 regexName 编成 Regex；空串 = 不过滤（返回 null）。模式非法就当场抛，
+        /// 绝不退化成「一个都没匹配上」—— 那会让调用方以为工程里真的没有这些对象。
+        /// </summary>
+        private static Regex? CompileNameFilterOrThrow(string regexName)
         {
-            var anySuccess = false;
+            if (string.IsNullOrEmpty(regexName)) return null;
+            try
+            {
+                return new Regex(regexName, RegexOptions.IgnoreCase);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new PortalException(PortalErrorCode.InvalidParams,
+                    $"regexName '{regexName}' is not a valid regular expression: {ex.Message}. "
+                    + "Pass an empty string to list everything, or escape the special characters.",
+                    null, ex);
+            }
+        }
+
+        // 与 GetBlocksRecursive 同因：返回值没人读、且子组那行是覆盖不是累积，已去掉。
+        private void GetTypesRecursive(PlcTypeGroup group, List<PlcType> list, string regexName = "")
+        {
+            var filter = CompileNameFilterOrThrow(regexName);
 
             foreach (var composition in group.Types)
             {
                 if (composition is PlcType type)
                 {
-                    try
+                    if (filter != null && !filter.IsMatch(type.Name))
                     {
-                        if (!string.IsNullOrEmpty(regexName) && !Regex.IsMatch(type.Name, regexName, RegexOptions.IgnoreCase))
-                        {
-                            continue; // Skip this block if it doesn't match the pattern
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // Invalid regex pattern, skip this block
-                        continue;
+                        continue; // Skip this type if it doesn't match the pattern
                     }
 
                     list.Add(type);
-
-                    anySuccess = true;
                 }
-
             }
 
             foreach (PlcTypeGroup subgroup in group.Groups)
             {
-                anySuccess = GetTypesRecursive(subgroup, list, regexName);
+                GetTypesRecursive(subgroup, list, regexName);
             }
-
-            return anySuccess;
         }
 
         #region meta (reflection helpers)

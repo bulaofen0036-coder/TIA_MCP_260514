@@ -186,22 +186,42 @@ namespace TiaMcpServer.Siemens
 
             var list = new List<PlcBlock>();
 
+            // 路径解析不到 ≠ 这个 PLC 里没有块。原来两件事都返回空列表，于是把 softwarePath
+            // 写错也得到「成功，0 个块」—— 调用方（尤其是模型）会据此认为 PLC 是空的，
+            // 转头去建一堆已经存在的块。真机实测过这条：传 'PLC_NOT_EXIST_XYZ' 得到 success=true。
+            var softwareContainer = GetSoftwareContainer(softwarePath);
+            if (softwareContainer?.Software is not PlcSoftware plcSoftware)
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GetBlocks: PLC software not found at '{softwarePath}'." + AvailablePlcPathsSuffix());
+            }
+
+            var group = plcSoftware.BlockGroup;
+            if (group == null)
+            {
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetBlocks: PLC '{softwarePath}' resolved, but its BlockGroup is not available — "
+                    + "the block list could NOT be read. This is not the same as 'the PLC has no blocks'.");
+            }
+
             try
             {
-                var softwareContainer = GetSoftwareContainer(softwarePath);
-                if (softwareContainer?.Software is PlcSoftware plcSoftware)
-                {
-                    var group = plcSoftware?.BlockGroup;
-
-                    if (group != null)
-                    {
-                        GetBlocksRecursive(group, list, regexName);
-                    }
-                }
+                GetBlocksRecursive(group, list, regexName);
+            }
+            catch (PortalException)
+            {
+                // 参数类错误（比如 regexName 不是合法正则）要原样上抛：包成「遍历失败」
+                // 会给出一个**不准确**的原因，调用方照着去查 Openness 就跑偏了。
+                throw;
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Error getting blocks");
+                // 遍历炸在半路时原来只记日志、把**残缺的**列表当完整结果返回。
+                // 「少了几个块」比「一个都没有」更难发现，因为它看起来完全正常。
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetBlocks: block enumeration failed after {list.Count} block(s) in '{softwarePath}'; "
+                    + "the returned list would have been INCOMPLETE, so it is not returned at all. "
+                    + $"Root cause: {ex.Message}", null, ex);
             }
 
             return list;
@@ -244,22 +264,36 @@ namespace TiaMcpServer.Siemens
 
             var list = new List<PlcType>();
 
+            // 与 GetBlocks 同因：路径解析不到 ≠ 这个 PLC 没有 UDT。
+            var softwareContainer = GetSoftwareContainer(softwarePath);
+            if (softwareContainer?.Software is not PlcSoftware plcSoftware)
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GetTypes: PLC software not found at '{softwarePath}'." + AvailablePlcPathsSuffix());
+            }
+
+            var group = plcSoftware.TypeGroup;
+            if (group == null)
+            {
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetTypes: PLC '{softwarePath}' resolved, but its TypeGroup is not available — "
+                    + "the type list could NOT be read. This is not the same as 'the PLC has no types'.");
+            }
+
             try
             {
-                var softwareContainer = GetSoftwareContainer(softwarePath);
-                if (softwareContainer?.Software is PlcSoftware plcSoftware)
-                {
-                    var group = plcSoftware?.TypeGroup;
-
-                    if (group != null)
-                    {
-                        GetTypesRecursive(group, list, regexName);
-                    }
-                }
+                GetTypesRecursive(group, list, regexName);
+            }
+            catch (PortalException)
+            {
+                throw;   // 同上：参数类错误不许被包成「遍历失败」
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Error getting user defined types");
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetTypes: type enumeration failed after {list.Count} type(s) in '{softwarePath}'; "
+                    + "the returned list would have been INCOMPLETE, so it is not returned at all. "
+                    + $"Root cause: {ex.Message}", null, ex);
             }
 
             return list;
