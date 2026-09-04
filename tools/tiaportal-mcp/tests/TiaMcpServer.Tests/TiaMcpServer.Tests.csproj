@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    最小离线自检套件。
+
+    为什么是控制台 Exe 而不是 VSTest 工程：这里链接的是引擎的**源文件**，
+    而引擎主体依赖 Siemens.Engineering.dll（需要本机装了 TIA Portal 才编得动），
+    托管不了整个工程。所以只把**零依赖**的那几个文件链进来，用 `dotnet run` 驱动。
+
+    ⚠️ 千万别用 `dotnet test` 跑它：那样只会还原、一个用例都不跑、然后退 0 ——
+    一个和「全部通过」长得一模一样的假绿灯。CI 里写死的是 `dotnet run`。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- HMI 模板布局体检 + 执行 JSON 构建器：两个都零依赖。
+         盯的是「执行 JSON 检查」那条 —— 它曾经在委托缺省时退化成
+         `items.Length > 0 && errors.Count == 0`，判据里含着 errors.Count == 0，
+         永远不可能新增错误，而发版前的离线验收闸走的正是那条空转路径。
+         恒不触发的检查只有会失败的用例盯得住，而且必须同时盯 API 形状：
+         委托一旦被改回可选，空转路径立刻复活，运行期用例一条都不会红。 -->
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\HmiTemplateLayoutAnalyzer.cs" Link="HmiTemplateLayoutAnalyzer.cs" />
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\HmiTemplateDesignJsonBuilder.cs" Link="HmiTemplateDesignJsonBuilder.cs" />
+    <!-- .s7res 的 en-US 扫描。原实现埋在依赖 MCP SDK 的大文件里，用 XML 解析器读 YAML，
+         对每个真实文件都抛异常又被 catch 吞掉，坏了很久没人发现 —— 抽成零依赖文件
+         就是为了能在这里被测到。 -->
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\S7ResScanner.cs" Link="S7ResScanner.cs" />
+  </ItemGroup>
+</Project>
