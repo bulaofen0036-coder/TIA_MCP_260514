@@ -605,10 +605,15 @@ namespace TiaMcpServer
                         })
                         .WithStdioServerTransport();
                     // TIA_MCP_PROFILE=lite → only [L0]/[L1] essentials (weak models / capped hosts).
-                    if (ModelContextProtocol.McpServer.IsLiteProfile())
-                        mcp.WithTools(ModelContextProtocol.McpServer.GetLiteTools());
-                    else
-                        mcp.WithToolsFromAssembly();
+                    //
+                    // 两个分支都走 WrapTools：参数诊断和大响应分页是**每个工具都该有**的能力，
+                    // 而原来的 `WithToolsFromAssembly()` 直接把工具塞进容器，中间没有插手的余地 ——
+                    // 于是 full profile 下少传一个必填参数只会得到「An error occurred invoking 'X'.」，
+                    // 大响应被截断后也拿不回后半段。改成先取列表再包装。
+                    mcp.WithTools(ModelContextProtocol.McpServer.WrapTools(
+                        ModelContextProtocol.McpServer.IsLiteProfile()
+                            ? ModelContextProtocol.McpServer.GetLiteTools()
+                            : ModelContextProtocol.McpServer.GetAllTools()));
                     mcp.WithPromptsFromAssembly();
                 }
                 catch (ReflectionTypeLoadException ex)
@@ -697,10 +702,11 @@ namespace TiaMcpServer
                         o.ServerInstructions = ModelContextProtocol.McpGuides.ServerInstructions;
                     })
                     .WithStreamServerTransport(httpToMcp, mcpToHttp);
-                if (ModelContextProtocol.McpServer.IsLiteProfile())
-                    mcpHttp.WithTools(ModelContextProtocol.McpServer.GetLiteTools());
-                else
-                    mcpHttp.WithToolsFromAssembly();
+                // 同 stdio 那处：两个分支都走 WrapTools，别让 HTTP 这条路少一层能力。
+                mcpHttp.WithTools(ModelContextProtocol.McpServer.WrapTools(
+                    ModelContextProtocol.McpServer.IsLiteProfile()
+                        ? ModelContextProtocol.McpServer.GetLiteTools()
+                        : ModelContextProtocol.McpServer.GetAllTools()));
                 mcpHttp.WithPromptsFromAssembly();
 
                 builder.Services.AddSingleton<TiaMcpServer.Siemens.Portal>();

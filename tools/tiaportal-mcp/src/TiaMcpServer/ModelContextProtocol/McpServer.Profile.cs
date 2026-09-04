@@ -53,6 +53,10 @@ namespace TiaMcpServer.ModelContextProtocol
             "GetPlcTagTables", "GetCrossReferences",
             "GetBlocks", "GetBlocksWithHierarchy", "GetBlockInfo",
             "ExportAsDocuments", "GoOffline",
+            // 大响应寄存与分页。**任何档都必须能翻页** —— 超过阈值的响应会被寄存，
+            // 挡掉这几个出口等于内容直接丢：真实工程上 GetBlocks 的首页只装得下十几个块，
+            // 剩下的拿不回来。它们只碰引擎自己内存里的那份副本，一个都不动 TIA 工程。
+            "GetExport", "ListExports", "SaveExport", "DeleteExport", "ClearExports",
         };
 
         public static IList<McpServerTool> GetLiteTools()
@@ -67,6 +71,22 @@ namespace TiaMcpServer.ModelContextProtocol
                 {
                     tools.Add(McpServerTool.Create(method));
                 }
+            }
+            return tools;
+        }
+
+        /// <summary>
+        /// 全量工具表。存在的理由是**能拿到列表才能包装它** —— 注册时原来走
+        /// `WithToolsFromAssembly()`，那条路直接把工具塞进容器，中间没有一个可以插手的地方，
+        /// 于是参数诊断、大响应分页这类「每个工具都该有」的能力根本接不上去。
+        /// </summary>
+        public static IList<McpServerTool> GetAllTools()
+        {
+            var tools = new List<McpServerTool>();
+            foreach (var method in typeof(McpServer).GetMethods(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (method.GetCustomAttribute<McpServerToolAttribute>() == null) continue;
+                tools.Add(McpServerTool.Create(method));
             }
             return tools;
         }
