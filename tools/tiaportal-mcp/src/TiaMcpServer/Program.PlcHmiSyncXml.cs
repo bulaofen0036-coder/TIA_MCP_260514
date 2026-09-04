@@ -58,10 +58,17 @@ namespace TiaMcpServer
 
             var import = McpServer.ImportPlcProgramFromDirectory("PLC_1", importDir, compileAfter: true, stopOnImportFailure: true);
             var compile = McpServer.CompileAndDiagnosePlc("PLC_1");
-            if ((compile.ErrorCount ?? 0) > 0 || (import.Failed?.Any() ?? false))
+            // 三态：ErrorCount==null 表示编译结果没读回来，不是零错误——不放行，但报告和异常文案要和"真有错误"分开。
+            bool? compileClean = compile.ErrorCount == null ? (bool?)null : compile.ErrorCount.Value == 0;
+            if (compileClean == false || (import.Failed?.Any() ?? false))
             {
                 WritePlcHmiSyncReport(reportPath, jsonReportPath, projectName, projectDirectory, importDir, false, "", expected, import, compile, new List<Dictionary<string, object?>>(), "PLC import or compile failed.");
                 throw new InvalidOperationException("PLC/HMI sync minimal validation failed during PLC compile. Report: " + reportPath);
+            }
+            if (compileClean == null)
+            {
+                WritePlcHmiSyncReport(reportPath, jsonReportPath, projectName, projectDirectory, importDir, false, "", expected, import, compile, new List<Dictionary<string, object?>>(), "PLC compile result unreadable (ErrorCount unavailable); compile NOT verified.");
+                throw new InvalidOperationException("PLC/HMI sync minimal validation NOT verified: compile result unreadable (ErrorCount unavailable). Report: " + reportPath);
             }
 
             var exportedTagTable = Path.Combine(reportDir, "Sync_Minimal_Tags_export.xml");
@@ -277,7 +284,7 @@ namespace TiaMcpServer
             md.AppendLine("- ProjectDirectory: `" + projectDirectory + "`");
             md.AppendLine("- ImportDir: `" + importDir + "`");
             md.AppendLine("- Result: `" + (passed ? "PASS" : "FAIL") + "`");
-            md.AppendLine("- PLC Compile: `errors=" + compile.ErrorCount + ", warnings=" + compile.WarningCount + ", state=" + compile.State + "`");
+            md.AppendLine("- PLC Compile: `errors=" + CountText(compile.ErrorCount) + ", warnings=" + CountText(compile.WarningCount) + ", state=" + compile.State + "`");
             if (!string.IsNullOrWhiteSpace(connectionReadback)) md.AppendLine("- HMI Connection: `" + connectionReadback.Replace("`", "'") + "`");
             if (!string.IsNullOrWhiteSpace(error)) md.AppendLine("- Error: `" + error.Replace("`", "'") + "`");
             md.AppendLine();
@@ -368,17 +375,22 @@ namespace TiaMcpServer
             };
             var importedBlockNames = import.ImportedBlocks ?? Array.Empty<string>();
             var exportedFileNames = exportedFiles.Select(Path.GetFileNameWithoutExtension).Where(n => !string.IsNullOrWhiteSpace(n)).ToArray();
-            var passed = (compile.ErrorCount ?? 0) == 0
-                && importedBlockNames.Any(n => string.Equals(n, "FB1_LAD_Motor", StringComparison.OrdinalIgnoreCase))
+            // 三态：ErrorCount==null 表示编译结果没读回来，原来的 ?? 0 会让 passed 直接为 true。
+            bool? compileClean = compile.ErrorCount == null ? (bool?)null : compile.ErrorCount.Value == 0;
+            var otherChecksPassed = importedBlockNames.Any(n => string.Equals(n, "FB1_LAD_Motor", StringComparison.OrdinalIgnoreCase))
                 && importedBlockNames.Any(n => string.Equals(n, "FB2_SCL_Count", StringComparison.OrdinalIgnoreCase))
                 && exportedFileNames.Any(n => string.Equals(n, "FB1_LAD_Motor", StringComparison.OrdinalIgnoreCase))
                 && exportedFileNames.Any(n => string.Equals(n, "FB2_SCL_Count", StringComparison.OrdinalIgnoreCase))
                 && checks.Values.All(v => v);
+            var passed = compileClean == true && otherChecksPassed;
             McpServer.SaveProject();
             WriteChineseCommentsReport(reportPath, jsonReportPath, projectName, projectDirectory, importDir, exportDir, passed, import, compile, checks, exportedFiles);
             if (!passed)
             {
-                throw new InvalidOperationException("PLC Chinese comments validation failed. Report: " + reportPath);
+                // 只有"其余检查都过、单单编译结果读不回来"才换文案；任何真失败仍走原文案。
+                throw new InvalidOperationException(otherChecksPassed && compileClean == null
+                    ? "PLC Chinese comments validation NOT verified: compile result unreadable (ErrorCount unavailable). Report: " + reportPath
+                    : "PLC Chinese comments validation failed. Report: " + reportPath);
             }
         }
 
@@ -453,7 +465,7 @@ namespace TiaMcpServer
             md.AppendLine();
             md.AppendLine("- Project: `" + projectName + "`");
             md.AppendLine("- Result: `" + (passed ? "PASS" : "FAIL") + "`");
-            md.AppendLine("- PLC Compile: `errors=" + compile.ErrorCount + ", warnings=" + compile.WarningCount + ", state=" + compile.State + "`");
+            md.AppendLine("- PLC Compile: `errors=" + CountText(compile.ErrorCount) + ", warnings=" + CountText(compile.WarningCount) + ", state=" + compile.State + "`");
             md.AppendLine("- ImportDir: `" + importDir + "`");
             md.AppendLine("- ExportDir: `" + exportDir + "`");
             md.AppendLine();
@@ -547,8 +559,8 @@ namespace TiaMcpServer
             sb.AppendLine();
             sb.AppendLine("Compile:");
             sb.AppendLine("State=" + compile.State);
-            sb.AppendLine("Errors=" + compile.ErrorCount);
-            sb.AppendLine("Warnings=" + compile.WarningCount);
+            sb.AppendLine("Errors=" + CountText(compile.ErrorCount));
+            sb.AppendLine("Warnings=" + CountText(compile.WarningCount));
             var compileErrors = compile.Errors?.ToArray() ?? Array.Empty<string>();
             var compileWarnings = compile.Warnings?.ToArray() ?? Array.Empty<string>();
             if (compileErrors.Length > 0)

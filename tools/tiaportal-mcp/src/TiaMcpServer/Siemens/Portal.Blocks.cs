@@ -41,6 +41,58 @@ namespace TiaMcpServer.Siemens
     {
         #region blocks/types
 
+        /// <summary>
+        /// 按名字在一个组里定位**唯一一个**对象。三级次序，专治「返回错块还冠上你请求的名字」：
+        /// 1) 先按字面精确同名（OrdinalIgnoreCase）—— 西门子块名里常带 '.'，而 '.' 在 _regexChars 里，
+        ///    老代码见到 '.' 就直接当正则走，于是请求 "FB_Motor.V2" 会被没锚定的 IsMatch 匹配上
+        ///    "X_FB_MotorAV2_Old"，FirstOrDefault 把排在前面的那个错块返回、调用方还以为拿到的是自己要的；
+        /// 2) 没有同名、且名字确实含元字符时才当模式用，并且**锚定** ^(?:...)$ ——
+        ///    保留模式能力，但杜绝部分命中；正则非法则返回 null（等同找不到，与老行为一致）；
+        /// 3) 锚定后仍命中多个 → 宁可报歧义也不猜（团队在删除口早就拒绝含元字符的路径，
+        ///    读/导出口一直没堵，这里补上）。
+        /// </summary>
+        private T? ResolveSingleByName<T>(IEnumerable<T> items, string name, Func<T, string> nameOf, string kind)
+            where T : class
+        {
+            var exact = items.FirstOrDefault(i => nameOf(i).Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (exact != null)
+            {
+                return exact;
+            }
+
+            if (name.IndexOfAny(_regexChars) < 0)
+            {
+                return null;
+            }
+
+            Regex regex;
+            try
+            {
+                regex = new Regex($"^(?:{name})$", RegexOptions.IgnoreCase);
+            }
+            catch (Exception)
+            {
+                // Invalid regex, return null
+                return null;
+            }
+
+            // 匹配与抛歧义都放在 try 之外：否则「歧义」这个异常会被上面捕获非法正则的 catch 吞成 null。
+            var matches = items.Where(i => regex.IsMatch(nameOf(i))).Take(11).ToList();
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+            if (matches.Count > 1)
+            {
+                var candidates = matches.Take(10).Select(nameOf).ToList();
+                throw new PortalException(PortalErrorCode.InvalidParams,
+                    $"Ambiguous {kind} name '{name}': it matched {(matches.Count > 10 ? "more than 10" : matches.Count.ToString())} {kind}s. Use the exact path instead.",
+                    candidates);
+            }
+
+            return matches[0];
+        }
+
         public PlcBlock? GetBlock(string softwarePath, string blockPath)
         {
             _logger?.LogInformation($"Getting block by path: {blockPath}");
@@ -60,30 +112,10 @@ namespace TiaMcpServer.Siemens
                     var path = blockPath.Contains("/") ? blockPath.Substring(0, blockPath.LastIndexOf("/")) : string.Empty;
                     var regexName = blockPath.Contains("/") ? blockPath.Substring(blockPath.LastIndexOf("/") + 1) : blockPath;
 
-                    PlcBlock? block = null;
-
                     var group = GetPlcBlockGroupByPath(softwarePath, path);
                     if (group != null)
                     {
-                        if (regexName.IndexOfAny(_regexChars) >= 0)
-                        {
-                            try
-                            {
-                                var regex = new Regex(regexName, RegexOptions.IgnoreCase);
-                                block = group.Blocks.FirstOrDefault(b => regex.IsMatch(b.Name)) as PlcBlock;
-                            }
-                            catch (Exception)
-                            {
-                                // Invalid regex, return null
-                                return null;
-                            }
-                        }
-                        else
-                        {
-                            block = group.Blocks.FirstOrDefault(b => b.Name.Equals(regexName, StringComparison.OrdinalIgnoreCase));
-                        }
-
-                        return block;
+                        return ResolveSingleByName(group.Blocks.Cast<PlcBlock>(), regexName, b => b.Name, "block");
                     }
                 }
             }
@@ -110,30 +142,10 @@ namespace TiaMcpServer.Siemens
                     var path = typePath.Contains("/") ? typePath.Substring(0, typePath.LastIndexOf("/")) : string.Empty;
                     var regexName = typePath.Contains("/") ? typePath.Substring(typePath.LastIndexOf("/") + 1) : typePath;
 
-                    PlcType? type = null;
-
                     var group = GetPlcTypeGroupByPath(softwarePath, path);
                     if (group != null)
                     {
-                        if (regexName.IndexOfAny(_regexChars) >= 0)
-                        {
-                            try
-                            {
-                                var regex = new Regex(regexName, RegexOptions.IgnoreCase);
-                                type = group.Types.FirstOrDefault(t => regex.IsMatch(t.Name)) as PlcType;
-                            }
-                            catch (Exception)
-                            {
-                                // Invalid regex, return null
-                                return null;
-                            }
-                        }
-                        else
-                        {
-                            type = group.Types.FirstOrDefault(t => t.Name.Equals(regexName, StringComparison.OrdinalIgnoreCase));
-                        }
-
-                        return type;
+                        return ResolveSingleByName(group.Types.Cast<PlcType>(), regexName, t => t.Name, "type");
                     }
                 }
             }

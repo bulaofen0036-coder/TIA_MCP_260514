@@ -126,9 +126,13 @@ namespace TiaMcpServer.Siemens
             try
             {
                 var names = GetAllPlcSoftware().Select(p => p.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
-                return names.Count > 0 ? " Available PLC paths: " + string.Join(", ", names) : string.Empty;
+                var paths = names.Count > 0 ? " Available PLC paths: " + string.Join(", ", names) : string.Empty;
+                // 附上设备树遍历中被吞掉的真因：路径其实是对的、只是遍历半途抛了的那种情况，
+                // 光报 "Available PLC paths" 会把用户引去改一个本来就没错的参数。
+                // 遍历正常时 DeviceScanErrorSuffix() 返回空串，消息与以前逐字节相同。
+                return paths + DeviceScanErrorSuffix();
             }
-            catch { return string.Empty; }
+            catch { return DeviceScanErrorSuffix(); }
         }
 
         /// <summary>
@@ -1532,10 +1536,8 @@ namespace TiaMcpServer.Siemens
             }
             catch { }
 
-            if (tagObj == null)
-            {
-                tagObj = TryFindByNameInCollection(tagsComp, Array.Empty<string>(), tagName);
-            }
+            // 原来这里还有一次 TryFindByNameInCollection(tagsComp, Array.Empty<string>(), tagName) 的"兜底"，
+            // 该方法只遍历 propertyHints，空数组＝循环体一次不进＝恒返回 null，纯死代码，已删。
 
             if (tagObj == null)
             {
@@ -1773,7 +1775,8 @@ namespace TiaMcpServer.Siemens
                     try
                     {
                         // find existing
-                        var exists = FindExistingByName(tagsComp, tn) ?? TryFindByNameInCollection(tagsComp, Array.Empty<string>(), tn);
+                        // 去掉 ?? TryFindByNameInCollection(tagsComp, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+                        var exists = FindExistingByName(tagsComp, tn);
                         if (exists != null)
                         {
                             var wr = new JsonArray();
@@ -2616,7 +2619,8 @@ namespace TiaMcpServer.Siemens
                 var tags = TryGetPropertyValue(tagTable, "Tags");
                 if (tags == null) throw new InvalidOperationException($"Tags collection not found on tag table '{tagTableName}'.");
 
-                var tag = FindExistingByName(tags, tagName) ?? TryFindByNameInCollection(tags, Array.Empty<string>(), tagName);
+                // 去掉 ?? TryFindByNameInCollection(tags, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+                var tag = FindExistingByName(tags, tagName);
                 var action = "exists";
                 if (tag == null)
                 {
@@ -2657,7 +2661,8 @@ namespace TiaMcpServer.Siemens
             var connections = TryGetPropertyValue(sw, "Connections");
             if (connections == null) throw new InvalidOperationException($"Connections collection not found on HMI software '{hmiSoftwarePath}'.");
 
-            var connection = FindExistingByName(connections, connectionName) ?? TryFindByNameInCollection(connections, Array.Empty<string>(), connectionName);
+            // 去掉 ?? TryFindByNameInCollection(connections, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+            var connection = FindExistingByName(connections, connectionName);
             if (connection == null)
             {
                 var create = connections.GetType().GetMethod("Create", new[] { typeof(string) });
@@ -4662,7 +4667,8 @@ namespace TiaMcpServer.Siemens
             var connections = TryGetPropertyValue(sw, "Connections");
             if (connections == null) throw new PortalException(PortalErrorCode.NotFound, $"HMI Connections collection not found on '{softwarePath}'");
 
-            var connection = FindExistingByName(connections, connectionName) ?? TryFindByNameInCollection(connections, Array.Empty<string>(), connectionName);
+            // 去掉 ?? TryFindByNameInCollection(connections, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+            var connection = FindExistingByName(connections, connectionName);
             if (connection == null) throw new PortalException(PortalErrorCode.NotFound, $"HMI connection not found: {connectionName}");
 
             if (!TryExportEngineeringObject(connection, exportPath, out var err))
@@ -4699,7 +4705,8 @@ namespace TiaMcpServer.Siemens
                 ?? FindTypeBySuffix("Communication.Connection");
             sb.AppendLine("ConnectionType=" + (connectionType?.FullName ?? "<not found>"));
 
-            var existing = FindExistingByName(connections, connectionName) ?? TryFindByNameInCollection(connections, Array.Empty<string>(), connectionName);
+            // 去掉 ?? TryFindByNameInCollection(connections, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+            var existing = FindExistingByName(connections, connectionName);
             if (existing != null)
             {
                 sb.AppendLine("ExistingConnection=" + connectionName);
@@ -4765,7 +4772,8 @@ namespace TiaMcpServer.Siemens
                 }
             }
 
-            created ??= FindExistingByName(connections, connectionName) ?? TryFindByNameInCollection(connections, Array.Empty<string>(), connectionName);
+            // 去掉 ?? TryFindByNameInCollection(connections, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+            created ??= FindExistingByName(connections, connectionName);
             if (created == null)
             {
                 sb.AppendLine("Readback=FAIL :: connection not found after create attempts");
