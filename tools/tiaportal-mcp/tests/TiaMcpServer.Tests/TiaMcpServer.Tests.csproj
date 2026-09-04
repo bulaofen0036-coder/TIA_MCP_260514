@@ -29,5 +29,10 @@
          对每个真实文件都抛异常又被 catch 吞掉，坏了很久没人发现 —— 抽成零依赖文件
          就是为了能在这里被测到。 -->
     <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\S7ResScanner.cs" Link="S7ResScanner.cs" />
+    <!-- 参数诊断的判定逻辑与大响应寄存库：两个都零依赖，专门抽成这样就是为了能在这里被喂真输入。
+         这两块坏了都不会崩 —— 一个只是少说一句话，一个只是让某一页文本报废 —— 属于
+         「坏了也悄无声息」那一类，只有会失败的用例盯得住。 -->
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\ArgDiagnostics.cs" Link="ArgDiagnostics.cs" />
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\ExportStore.cs" Link="ExportStore.cs" />
   </ItemGroup>
 </Project>

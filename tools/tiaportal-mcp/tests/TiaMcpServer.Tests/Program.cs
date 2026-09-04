@@ -39,6 +39,9 @@ namespace TiaMcpServer.Tests
             Console.WriteLine("== .s7res 的 en-US 扫描（原实现对每个真实文件都抛异常又被吞掉）==");
             RunS7ResScannerTests();
 
+            Console.WriteLine("== 参数诊断 + 大响应寄存分页（坏了也悄无声息的两块）==");
+            ExportsAndArgDiagnosticsTests.Run(Check);
+
             Console.WriteLine(_fail == 0
                 ? $"{_pass} passed, {_fail} failed."
                 : $"{_pass} passed, {_fail} failed.  <<< 有失败");
