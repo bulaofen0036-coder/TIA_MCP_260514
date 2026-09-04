@@ -598,6 +598,11 @@ namespace TiaMcpServer.Siemens
 
         private SoftwareContainer? GetSoftwareContainer(string softwarePath)
         {
+            // 清空点必须在这里、不能放到 ResolveSoftwareContainerUncached 里：下面有缓存，
+            // 命中缓存时根本不进 Uncached，在那里清会让上一次的错误跨调用残留，
+            // 把一次早已成功的解析说成"遍历出错"。放在入口＝每次对外解析都从干净状态开始。
+            _deviceScanFirstError = null;
+
             if (_project == null)
             {
                 if (_softwareCacheProject != null) { _softwareContainerCache.Clear(); _softwareCacheProject = null; }
@@ -720,6 +725,34 @@ namespace TiaMcpServer.Siemens
             return null;
         }
 
+        /// <summary>
+        /// 遍历设备树时被吞掉的首个异常（"位置: 异常类型: message"），没有则为 null。
+        /// 为什么要存这么一份：FindFirstSoftwareContainer 是静态方法、返回值又只有
+        /// SoftwareContainer?，改签名会波及大量调用点；把真因暂存在这里，才能在不动签名的
+        /// 前提下让上层的"找不到 PLC"消息说出真话，而不是让用户去改一个本来就对的路径。
+        /// [ThreadStatic]：Openness 调用按线程走，避免并发会话互相串消息。
+        /// </summary>
+        [ThreadStatic]
+        private static string? _deviceScanFirstError;
+
+        /// <summary>
+        /// 只记首个：后续异常多半是同一个代理故障的连锁反应，首个最接近真因。
+        /// </summary>
+        private static void RecordDeviceScanError(string where, Exception ex)
+        {
+            _deviceScanFirstError ??= $"{where}: {ex.GetType().Name}: {ex.Message}";
+        }
+
+        /// <summary>
+        /// 供"找不到 PLC"一类消息拼接的后缀；本次解析没有吞过异常时返回空串
+        /// （保证遍历正常时消息与以前逐字节相同）。
+        /// </summary>
+        public string DeviceScanErrorSuffix()
+        {
+            var err = _deviceScanFirstError;
+            return string.IsNullOrEmpty(err) ? string.Empty : " Device tree scan error: " + err;
+        }
+
         private static SoftwareContainer? FindFirstSoftwareContainer(IEnumerable<DeviceItem> roots, string? preferName)
         {
             try
@@ -749,11 +782,29 @@ namespace TiaMcpServer.Siemens
                                 if (ch != null) stack.Push(ch);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        // 这里抛异常＝整棵子树被静默剪掉，PLC 可能就在被剪掉的那半边。
+                        // 继续遍历其余分支（保持原行为），但把真因留下。
+                        RecordDeviceScanError("DeviceItems(" + (TryGetDeviceItemName(it) ?? "?") + ")", ex);
+                    }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 这里抛异常＝整次遍历被静默中止，结果一定是"找不到"，必须留下真因。
+                RecordDeviceScanError("DeviceTreeScan", ex);
+            }
             return null;
+        }
+
+        /// <summary>
+        /// 取 DeviceItem 名字用于错误定位；读 Name 本身也可能抛（代理已失效），所以再包一层。
+        /// </summary>
+        private static string? TryGetDeviceItemName(DeviceItem item)
+        {
+            try { return item.Name; }
+            catch { return null; }
         }
 
         private SoftwareContainer? GetSoftwareContainerInGroups(DeviceUserGroupComposition groups, string[] pathSegments, int index)
@@ -1522,7 +1573,9 @@ namespace TiaMcpServer.Siemens
                         }
                     }
                     catch { }
-                    return TryFindByNameInCollection(tagsComp, Array.Empty<string>(), tagName);
+                    // 原来这里还有一层 TryFindByNameInCollection(tagsComp, Array.Empty<string>(), ...) 的"兜底"，
+                    // 但该方法只遍历 propertyHints，空数组＝循环体一次不进＝恒返回 null，是死代码。
+                    return null;
                 }
 
                 case "hmiconnection":
@@ -1538,7 +1591,8 @@ namespace TiaMcpServer.Siemens
                     if (sc?.Software == null) return null;
                     var conns = TryGetPropertyValue(sc.Software, "Connections");
                     if (conns == null) return null;
-                    return FindExistingByName(conns, connectionName) ?? TryFindByNameInCollection(conns, Array.Empty<string>(), connectionName);
+                    // 去掉 ?? TryFindByNameInCollection(conns, Array.Empty<string>(), ...)：空 hints 恒返回 null。
+                    return FindExistingByName(conns, connectionName);
                 }
 
                 case "hmiscreenitem":

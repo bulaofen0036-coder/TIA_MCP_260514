@@ -69,10 +69,15 @@ namespace TiaMcpServer.Cli
             EnsureConnectedOpen(Positional(args));
             var plc = Opt(args, "--plc") ?? "PLC_1";
             var c = McpServer.CompileAndDiagnosePlc(plc);
-            bool clean = (c.ErrorCount ?? 0) == 0;
+            // 三态：ErrorCount==null 表示编译结果没读回来，不是零错误。
+            // 原来的 ?? 0 会让"读不回来"退 0，脚本和 CI 会当成编译干净，这里必须退 1。
+            bool? clean = c.ErrorCount == null ? (bool?)null : c.ErrorCount.Value == 0;
+            var errorsText = c.ErrorCount?.ToString() ?? "(unreadable)";
+            var warningsText = c.WarningCount?.ToString() ?? "(unreadable)";
             if (Flag(args, "--json")) Console.WriteLine(Json(c));
-            else Console.WriteLine($"compile {plc}: state={c.State} errors={c.ErrorCount} warnings={c.WarningCount}");
-            return clean ? 0 : 1;
+            else if (clean == null) Console.WriteLine($"compile {plc}: state={c.State} errors={errorsText} warnings={warningsText} (compile result unreadable, NOT verified)");
+            else Console.WriteLine($"compile {plc}: state={c.State} errors={errorsText} warnings={warningsText}");
+            return clean == true ? 0 : 1;
         }
 
         private static int Describe(string[] args)

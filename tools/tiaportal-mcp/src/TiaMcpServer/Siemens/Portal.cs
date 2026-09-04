@@ -188,6 +188,23 @@ namespace TiaMcpServer.Siemens
             return result;
         }
 
+        // 判断一个 attach 失败是不是"白名单/授权被拒"（Openness 用户组、授权白名单）。
+        // 这类拒绝跟具体是哪个 Portal 进程无关——换下一个候选、乃至自己新起一个实例，
+        // 结果都一样被拒。用类型名字符串匹配而不是 catch 具体类型：
+        // EngineeringSecurityException 来自运行时解析的 Openness 程序集（V20/V21 两套 csproj），
+        // 不引入编译期依赖更稳。沿 InnerException 链走，因为它常被
+        // EngineeringTargetInvocationException 之类包一层。
+        private static bool IsSecurityRefusal(Exception? ex)
+        {
+            var e = ex;
+            while (e != null)
+            {
+                if (e.GetType().Name == "EngineeringSecurityException") return true;
+                e = e.InnerException;
+            }
+            return false;
+        }
+
         public bool ConnectPortal()
         {
             _logger?.LogInformation("Connecting to TIA Portal...");
@@ -271,6 +288,26 @@ namespace TiaMcpServer.Siemens
                         {
                             _logger?.LogWarning(ex, $"Attach failed for TIA Portal PID={proc.Id}");
                             LastConnectError = ex.ToString();
+
+                            // "这个候选连不上"（忙 / attach 超时 / 没有工程）可以换下一个；
+                            // 但白名单/授权被拒换谁都一样，继续扫毫无意义且有害：扫空所有候选后
+                            // 会落到下面"新起一个无头 TIA 实例"，那次同样被拒，却在用户机器上
+                            // 留下一个空转的孤儿 Siemens.Automation.Portal 进程。所以当场原样重抛，
+                            // 让调用方拿到真因而不是"没有可 attach 的实例"。
+                            if (IsSecurityRefusal(ex))
+                            {
+                                // 先释放此前记下的可 attach 候选——已经不会有人用它了。
+                                // 置 null 后，当前候选（若正是它）也能被 finally 正常释放，不漏 COM 引用。
+                                if (firstAttachable != null)
+                                {
+                                    if (firstAttachable != candidate)
+                                    {
+                                        try { firstAttachable.Dispose(); } catch { }
+                                    }
+                                    firstAttachable = null;
+                                }
+                                throw;
+                            }
                         }
                         finally
                         {

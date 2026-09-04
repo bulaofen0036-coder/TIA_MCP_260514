@@ -2366,7 +2366,10 @@ namespace TiaMcpServer.ModelContextProtocol
             "[L2][Category:PLC-Online][PreCondition:Connect+OpenProject]" +
             " List all force table names in the PLC software." +
             " Force tables configure which variables are continuously forced to specific values while the CPU is online." +
-            " Use SetForceTableEntry to configure entries, then go online for the forces to take effect.")]
+            " Read-only: this server exposes NO tool for creating or editing force entries — forcing overrides live PLC logic" +
+            " (a forced output stays forced regardless of what the program writes) and is deliberately kept out of the AI tool surface." +
+            " Create or edit force entries in the TIA Portal UI. For a one-shot value written from a watch table instead," +
+            " use SetWatchTableModifyValue (the variable reverts to PLC logic afterwards).")]
         public static ResponseStringList GetPlcForceTables(
             [Description("softwarePath: path to the PLC software, e.g. 'PLC_1'")] string softwarePath)
         {
@@ -2392,7 +2395,14 @@ namespace TiaMcpServer.ModelContextProtocol
             " This is an OFFLINE CONFIGURATION step — the value is written to the PLC only when TIA Portal is online and the trigger fires." +
             " Trigger options: Permanent (every cycle), PermanentAtStart (every cycle, at scan start), OnceOnlyAtStart (single write at scan start), PermanentAtEnd, OnceOnlyAtEnd, OnceOnlyAtStop." +
             " Use GoOnline before calling this for the write to reach the PLC." +
-            " Does NOT use Force — variable reverts to PLC logic after the modify. To hold a value persistently, use SetForceTableEntry instead." +
+            " SAFETY: the target is a variable in the physical CPU, not a simulation. The moment the trigger fires the value" +
+            " lands on the real address — if that address is a coil, a valve, a contactor or a drive enable, the machine moves" +
+            " at that instant, with no acknowledgement step. Before calling, know exactly what the address drives and confirm" +
+            " nobody is at or inside the machine. The resulting physical motion is NOT undone by calling this tool again with" +
+            " another value; the equipment stays wherever it moved to." +
+            " Not a Force: this writes the value once per trigger event and the variable then follows PLC logic again" +
+            " (a force would keep overriding the program continuously). This server exposes no tool for force entries —" +
+            " GetPlcForceTables only lists them; use TIA Portal directly to force a value." +
             " Example: SetWatchTableModifyValue('PLC_1', 'Debug_WT', 'DB1.DBX0.0', 'TRUE', 'OnceOnlyAtStart')")]
         public static ResponseMessage SetWatchTableModifyValue(
             [Description("softwarePath: path to the PLC software, e.g. 'PLC_1'")] string softwarePath,
@@ -2988,7 +2998,9 @@ namespace TiaMcpServer.ModelContextProtocol
         {
             try
             {
-                var data = HmiTemplateLayoutAnalyzer.AnalyzeDirectory(templateDirectory);
+                // 必须显式传检查委托：不传时 "execution JSON shape" 这项检查会退化成恒真的同义反复，
+                // 工具描述里承诺的检查等于空转，模板报错也照样返回 ok。
+                var data = HmiTemplateLayoutAnalyzer.AnalyzeDirectory(templateDirectory, HmiTemplateLayoutAnalyzer.ExecutionJsonBuilds);
                 var ok = data["ok"]?.GetValue<bool>() == true;
                 return new ResponseJsonReport
                 {
@@ -3013,7 +3025,8 @@ namespace TiaMcpServer.ModelContextProtocol
             "[L2][Category:PLC-TechnologyObjects][PreCondition:Connect+OpenProject]" +
             " List all Technology Objects (TOs) in the PLC software: axes, cams, measuring inputs, etc." +
             " Returns each TO's Name, type (OfSystemLibElement), and firmware version (OfSystemLibVersion)." +
-            " Use this to discover TO names before ExportTechnologyObject or GetAxisParameters." +
+            " Use this to discover TO names before ExportTechnologyObject." +
+            " No tool returns axis/TO parameter values directly — export the TO with ExportTechnologyObject and read the XML file." +
             " TOs are stored as TechnologicalInstanceDB instances in the TechnologicalObjectGroup.")]
         public static ResponseTechnologyObjectList GetTechnologyObjects(
             [Description("softwarePath: path to the PLC software, e.g. 'PLC_1'")] string softwarePath)
@@ -3745,7 +3758,7 @@ namespace TiaMcpServer.ModelContextProtocol
             " Download the compiled PLC program to the physical CPU over the network." +
             " The CPU will stop briefly during download and restart automatically (controlled by startAfterDownload)." +
             " SAFETY: Verify no personnel are near the machine before downloading. This changes live PLC behavior." +
-            " Workflow: Connect → OpenProject → CompileSoftware → CheckDownloadReadiness → DownloadToPlc → GetCpuOnlineState." +
+            " Workflow: Connect → OpenProject → CompileSoftware → CheckDownloadReadiness → DownloadToPlc → GetOnlineState." +
             " On success State=Success or Warning. On Error check Errors[] for details." +
             " Default options (keepActualValues=true, consistentBlocksOnly=true) are safe for most scenarios." +
             " Set keepActualValues=false only when DB initial values must be reset — this is irreversible." +

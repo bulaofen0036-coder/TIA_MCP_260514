@@ -868,9 +868,17 @@ END_DATA_BLOCK
                     try
                     {
                         var tag = currentTags.FirstOrDefault(x => string.Equals(x.Name, tagName, StringComparison.OrdinalIgnoreCase));
-                        McpServer.BindUnifiedHmiTagDynamization("HMI_RT_1", screenName, itemName, propertyName, tagName, tag?.DataType ?? "Bool", tag?.PlcTag ?? "", "");
-                        McpServer.DescribeHmiScreenItem("HMI_RT_1", screenName, itemName, 80);
-                        result["bindingsSucceeded"] = (int)result["bindingsSucceeded"]! + 1;
+                        var bind = McpServer.BindUnifiedHmiTagDynamization("HMI_RT_1", screenName, itemName, propertyName, tagName, tag?.DataType ?? "Bool", tag?.PlcTag ?? "", "");
+                        var itemReadback = McpServer.DescribeHmiScreenItem("HMI_RT_1", screenName, itemName, 80);
+                        var bindFailure = DescribeHmiTagBindingFailure(bind, itemReadback);
+                        if (bindFailure == null)
+                        {
+                            result["bindingsSucceeded"] = (int)result["bindingsSucceeded"]! + 1;
+                        }
+                        else
+                        {
+                            ((List<string>)result["errors"]!).Add($"{itemName}.{propertyName}->{tagName}: {bindFailure}");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -891,11 +899,17 @@ END_DATA_BLOCK
                         McpServer.EnsureUnifiedHmiButtonEventHandler("HMI_RT_1", screenName, buttonName, eventType);
                         McpServer.SetUnifiedHmiButtonEventScriptCode("HMI_RT_1", screenName, buttonName, eventType, scriptCode, "", false);
                         var readback = McpServer.DescribeUnifiedHmiButtonEventScript("HMI_RT_1", screenName, buttonName, eventType, 80);
-                        if ((readback.Members?.Any() ?? false) || !string.IsNullOrWhiteSpace(readback.Message))
+                        // 证据接到判据上：回读拿到成员才算事件真的挂上了。
+                        // 只看 Message 不算数 —— 失败路径（Project is null / 找不到 handler）同样带 Message，成员却是空的。
+                        if (readback.Members?.Any() ?? false)
                         {
                             result["eventReadbacks"] = (int)result["eventReadbacks"]! + 1;
+                            result["eventsSucceeded"] = (int)result["eventsSucceeded"]! + 1;
                         }
-                        result["eventsSucceeded"] = (int)result["eventsSucceeded"]! + 1;
+                        else
+                        {
+                            ((List<string>)result["errors"]!).Add($"{buttonName}.{eventType}->{tagName}: UNVERIFIED: event script readback returned no members ({readback.Message ?? "no readback result"})");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1020,6 +1034,46 @@ END_DATA_BLOCK
             if (meta["success"] is JsonValue successValue && successValue.TryGetValue<bool>(out var success) && !success) return 1;
             if (meta["failed"] is JsonArray failed) return failed.Count;
             return 0;
+        }
+
+        // 绑定判据：BindUnifiedHmiTagDynamization "没抛异常" 不等于绑上了。
+        // Portal 侧 RunHmiStepTool 把异常吞成 Meta["success"]=false + Meta["error"]；而属性名不被控件接受时
+        // 连异常都没有，只在 Meta["setTag"]=false 里如实报出来。所以硬证据是 Meta 的 success + setTag 两个字段。
+        // 返回 null = 确实挂上了；返回字符串 = 没挂上（或没能验证）的原因，附上实际读到的内容。
+        private static string? DescribeHmiTagBindingFailure(ResponseMessage? bind, ResponseObjectDescribe? readback)
+        {
+            var meta = bind?.Meta;
+            if (meta == null)
+            {
+                return "binding returned no Meta evidence";
+            }
+
+            var evidence = "setTag=" + (meta["setTag"]?.ToString() ?? "(absent)")
+                           + ", action=" + (meta["action"]?.ToString() ?? "(absent)")
+                           + ", dynamizationType=" + (meta["dynamizationType"]?.ToString() ?? "(absent)");
+
+            if (meta["success"] is JsonValue successValue && successValue.TryGetValue<bool>(out var success) && !success)
+            {
+                return "binding failed: " + (meta["error"]?.ToString() ?? bind?.Message ?? "(no error detail)") + " [" + evidence + "]";
+            }
+
+            if (!(meta["setTag"] is JsonValue setTagValue && setTagValue.TryGetValue<bool>(out var setTag)))
+            {
+                return "binding reported no setTag evidence [" + evidence + "]";
+            }
+
+            if (!setTag)
+            {
+                return "Tag property was not accepted by the control [" + evidence + "]";
+            }
+
+            // 回读读不回来既不算绑定失败也不算成功：显式标 UNVERIFIED，不许静默吞掉当成功。
+            if (readback?.Members == null || !readback.Members.Any())
+            {
+                return "UNVERIFIED: screen item readback returned no members (" + (readback?.Message ?? "no readback result") + ") [" + evidence + "]";
+            }
+
+            return null;
         }
 
         private static void RunValidateMappedHmiTemplateBindings(CliOptions options)
@@ -1330,9 +1384,17 @@ END_DATA_BLOCK
                 try
                 {
                     var tag = currentTags.FirstOrDefault(x => string.Equals(x.Name, tagName, StringComparison.OrdinalIgnoreCase));
-                    McpServer.BindUnifiedHmiTagDynamization("HMI_RT_1", screenName, itemName, propertyName, tagName, tag?.DataType ?? "Bool", tag?.PlcTag ?? "", "");
-                    McpServer.DescribeHmiScreenItem("HMI_RT_1", screenName, itemName, 80);
-                    result["bindingsSucceeded"] = (int)result["bindingsSucceeded"]! + 1;
+                    var bind = McpServer.BindUnifiedHmiTagDynamization("HMI_RT_1", screenName, itemName, propertyName, tagName, tag?.DataType ?? "Bool", tag?.PlcTag ?? "", "");
+                    var itemReadback = McpServer.DescribeHmiScreenItem("HMI_RT_1", screenName, itemName, 80);
+                    var bindFailure = DescribeHmiTagBindingFailure(bind, itemReadback);
+                    if (bindFailure == null)
+                    {
+                        result["bindingsSucceeded"] = (int)result["bindingsSucceeded"]! + 1;
+                    }
+                    else
+                    {
+                        ((List<string>)result["errors"]!).Add($"{itemName}.{propertyName}->{tagName}: {bindFailure}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1353,11 +1415,17 @@ END_DATA_BLOCK
                     McpServer.EnsureUnifiedHmiButtonEventHandler("HMI_RT_1", screenName, buttonName, eventType);
                     McpServer.SetUnifiedHmiButtonEventScriptCode("HMI_RT_1", screenName, buttonName, eventType, scriptCode, "", false);
                     var readback = McpServer.DescribeUnifiedHmiButtonEventScript("HMI_RT_1", screenName, buttonName, eventType, 80);
-                    if ((readback.Members?.Any() ?? false) || !string.IsNullOrWhiteSpace(readback.Message))
+                    // 证据接到判据上：回读拿到成员才算事件真的挂上了。
+                    // 只看 Message 不算数 —— 失败路径（Project is null / 找不到 handler）同样带 Message，成员却是空的。
+                    if (readback.Members?.Any() ?? false)
                     {
                         result["eventReadbacks"] = (int)result["eventReadbacks"]! + 1;
+                        result["eventsSucceeded"] = (int)result["eventsSucceeded"]! + 1;
                     }
-                    result["eventsSucceeded"] = (int)result["eventsSucceeded"]! + 1;
+                    else
+                    {
+                        ((List<string>)result["errors"]!).Add($"{buttonName}.{eventType}->{tagName}: UNVERIFIED: event script readback returned no members ({readback.Message ?? "no readback result"})");
+                    }
                 }
                 catch (Exception ex)
                 {

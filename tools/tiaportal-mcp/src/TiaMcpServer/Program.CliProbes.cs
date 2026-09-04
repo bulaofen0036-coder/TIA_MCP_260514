@@ -22,6 +22,10 @@ namespace TiaMcpServer
     // Partial: cli probe/test commands. Extracted from Program.cs (god-file split); behavior unchanged.
     public partial class Program
     {
+        // ErrorCount/WarningCount 是 int?，null 专门表示「编译结果没读回来」，不是 0。
+        // 直接插进文本会打出 errors= 后面一片空白，看着像零错误，所以统一显示成 (unreadable)。
+        private static string CountText(int? count) => count?.ToString() ?? "(unreadable)";
+
         private static void RunOnlineMonitoringSafetySelfTest()
         {
             var result = McpServer.RunOnlineMonitoringSafetySelfTest();
@@ -77,7 +81,7 @@ namespace TiaMcpServer
                     LogDiag($"PLC import failure: {failure.Path} :: {failure.Error}");
             }
             if (import.Compile != null)
-                LogDiag($"PLC compile: {import.Compile.State}, errors={import.Compile.ErrorCount}, warnings={import.Compile.WarningCount}");
+                LogDiag($"PLC compile: {import.Compile.State}, errors={CountText(import.Compile.ErrorCount)}, warnings={CountText(import.Compile.WarningCount)}");
 
             if (hmi.Ok == true)
             {
@@ -134,7 +138,7 @@ namespace TiaMcpServer
             }
             if (import.Compile != null)
             {
-                LogDiag($"PLC compile: state={import.Compile.State}, errors={import.Compile.ErrorCount}, warnings={import.Compile.WarningCount}");
+                LogDiag($"PLC compile: state={import.Compile.State}, errors={CountText(import.Compile.ErrorCount)}, warnings={CountText(import.Compile.WarningCount)}");
             }
 
             McpServer.EnsureUnifiedHmiTagTable("HMI_RT_1", "FlowLightTags");
@@ -166,7 +170,7 @@ namespace TiaMcpServer
             LogHmiTagAttributes("Flow_Enable");
 
             var plcCompile = McpServer.CompileAndDiagnosePlc("PLC_1");
-            LogDiag($"Final PLC compile: state={plcCompile.State}, errors={plcCompile.ErrorCount}, warnings={plcCompile.WarningCount}");
+            LogDiag($"Final PLC compile: state={plcCompile.State}, errors={CountText(plcCompile.ErrorCount)}, warnings={CountText(plcCompile.WarningCount)}");
             foreach (var e in plcCompile.Errors ?? Array.Empty<string>()) LogDiag("Final PLC compile error: " + e);
             foreach (var w in plcCompile.Warnings ?? Array.Empty<string>()) LogDiag("Final PLC compile warning: " + w);
 
@@ -1293,7 +1297,7 @@ namespace TiaMcpServer
             foreach (var failure in plcImport.Failed ?? Array.Empty<ImportFailure>())
                 LogDiag($"PLC import failure: {failure.Path} :: {failure.Error}");
             if (plcImport.Compile != null)
-                LogDiag($"PLC import compile: {plcImport.Compile.State}, errors={plcImport.Compile.ErrorCount}, warnings={plcImport.Compile.WarningCount}");
+                LogDiag($"PLC import compile: {plcImport.Compile.State}, errors={CountText(plcImport.Compile.ErrorCount)}, warnings={CountText(plcImport.Compile.WarningCount)}");
 
             var symbolicTagPath = Path.Combine(importDir, "ClassicHmiTagTable_Symbolic.xml");
             WriteClassicHmiSymbolicTagTableProbeXml(symbolicTagPath, "Motor_HMI_Tags", "HMI_Connection_1");
@@ -1395,7 +1399,7 @@ namespace TiaMcpServer
 
             if (import.Compile != null)
             {
-                LogDiag($"PLC syntax import compile: state={import.Compile.State}, errors={import.Compile.ErrorCount}, warnings={import.Compile.WarningCount}");
+                LogDiag($"PLC syntax import compile: state={import.Compile.State}, errors={CountText(import.Compile.ErrorCount)}, warnings={CountText(import.Compile.WarningCount)}");
             }
 
             var sourceImported = false;
@@ -1427,20 +1431,27 @@ namespace TiaMcpServer
                 if (sourceGenerated)
                 {
                     var sourceCompile = McpServer.CompileAndDiagnosePlc(softwarePath);
-                    LogDiag($"PLC SCL source compile: state={sourceCompile.State}, errors={sourceCompile.ErrorCount}, warnings={sourceCompile.WarningCount}");
+                    LogDiag($"PLC SCL source compile: state={sourceCompile.State}, errors={CountText(sourceCompile.ErrorCount)}, warnings={CountText(sourceCompile.WarningCount)}");
                     foreach (var e in sourceCompile.Errors ?? Array.Empty<string>()) LogDiag("PLC SCL source error: " + e);
                     foreach (var w in sourceCompile.Warnings ?? Array.Empty<string>()) LogDiag("PLC SCL source warning: " + w);
                 }
             }
 
             var compile = McpServer.CompileAndDiagnosePlc(softwarePath);
-            LogDiag($"PLC syntax validation compile: state={compile.State}, errors={compile.ErrorCount}, warnings={compile.WarningCount}");
+            LogDiag($"PLC syntax validation compile: state={compile.State}, errors={CountText(compile.ErrorCount)}, warnings={CountText(compile.WarningCount)}");
             foreach (var e in compile.Errors ?? Array.Empty<string>()) LogDiag("PLC syntax validation error: " + e);
             foreach (var w in compile.Warnings ?? Array.Empty<string>()) LogDiag("PLC syntax validation warning: " + w);
 
-            if ((compile.ErrorCount ?? 0) > 0 || (import.Failed?.Any() ?? false))
+            // 三态：true=确实零错误，false=确实有错误，null=编译结果没读回来。
+            // null 不能当成通过（原来的 ?? 0 就是这么放行的），但要和"真有错误"分开报，先判真失败保证原文案不变。
+            bool? syntaxClean = compile.ErrorCount == null ? (bool?)null : compile.ErrorCount.Value == 0;
+            if (syntaxClean == false || (import.Failed?.Any() ?? false))
             {
                 throw new InvalidOperationException($"PLC SCL syntax validation failed. ImportDir: {importDir}");
+            }
+            if (syntaxClean == null)
+            {
+                throw new InvalidOperationException($"PLC SCL syntax validation NOT verified: compile result unreadable (ErrorCount unavailable). ImportDir: {importDir}");
             }
 
             var save = McpServer.SaveProject();
@@ -1507,15 +1518,21 @@ namespace TiaMcpServer
             var import = McpServer.ImportPlcProgramFromDirectory("PLC_1", importDir, compileAfter: true, stopOnImportFailure: false);
             LogDiag($"PLC import: types={string.Join(",", import.ImportedTypes ?? Array.Empty<string>())}, tags={string.Join(",", import.ImportedTagTables ?? Array.Empty<string>())}, blocks={string.Join(",", import.ImportedBlocks ?? Array.Empty<string>())}, failed={import.Failed?.Count() ?? 0}");
             foreach (var failure in import.Failed ?? Array.Empty<ImportFailure>()) LogDiag($"PLC import failure: {failure.Path} :: {failure.Error}");
-            if (import.Compile != null) LogDiag($"PLC import compile: {import.Compile.State}, errors={import.Compile.ErrorCount}, warnings={import.Compile.WarningCount}");
+            if (import.Compile != null) LogDiag($"PLC import compile: {import.Compile.State}, errors={CountText(import.Compile.ErrorCount)}, warnings={CountText(import.Compile.WarningCount)}");
 
             var compile = McpServer.CompileAndDiagnosePlc("PLC_1");
-            LogDiag($"Final PLC compile: state={compile.State}, errors={compile.ErrorCount}, warnings={compile.WarningCount}");
+            LogDiag($"Final PLC compile: state={compile.State}, errors={CountText(compile.ErrorCount)}, warnings={CountText(compile.WarningCount)}");
             foreach (var e in compile.Errors ?? Array.Empty<string>()) LogDiag("PLC compile error: " + e);
             foreach (var w in compile.Warnings ?? Array.Empty<string>()) LogDiag("PLC compile warning: " + w);
-            if ((compile.ErrorCount ?? 0) > 0)
+            // 同上三态：读不回编译结果同样不放行，但文案与"真有错误"分开。
+            bool? compileClean = compile.ErrorCount == null ? (bool?)null : compile.ErrorCount.Value == 0;
+            if (compileClean == false)
             {
                 throw new InvalidOperationException("PLC compile failed. See log/importDir: " + importDir);
+            }
+            if (compileClean == null)
+            {
+                throw new InvalidOperationException("PLC compile NOT verified: compile result unreadable (ErrorCount unavailable). See log/importDir: " + importDir);
             }
 
             if (hmi.Ok == true)
