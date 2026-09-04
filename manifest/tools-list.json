@@ -1,6 +1,6 @@
 {
   "package": "TIA_MCP_Delivery_v2.4.0",
-  "generatedAt": "2026-08-31T16:53:50.760031+08:00",
+  "generatedAt": "2026-09-04T16:02:40.801659+08:00",
   "source": "live MCP tools/list of TiaMcpServer.exe",
   "toolCount": 209,
   "note": "Full roster (--profile full). The default lite profile lists ~49 of these; the rest stay reachable via FindTools + CallTool. Runtime tools/list remains authoritative.",
@@ -767,7 +767,7 @@
         "pgPcInterface",
         "targetIpAddress"
       ],
-      "description": "[L1][Category:PLC-Online][ONLINE-WRITE][PreCondition:Connect+OpenProject+CompileSoftware+CheckDownloadReadiness] Download the compiled PLC program to the physical CPU over the network. The CPU will stop briefly during download and restart automatically (controlled by startAfterDownload). SAFETY: Verify no personnel are near the machine before downloading. This changes live PLC behavior. Workflow: Connect → OpenProject → CompileSoftware → CheckDownloadReadiness → DownloadToPlc → GetCpuOnlineState. On success State=Success or Warning. On Error check Errors[] for details. Default options (keepActualValues=true, consistentBlocksOnly=true) are safe for most scenarios. Set keepActualValues=false only when DB initial values must be reset — this is irreversible. On a multi-NIC PC the PG/PC interface is picked automatically (the adapter sharing a subnet with the CPU); Meta.pgPcRoute reports which one was used. Override with pgPcInterface / targetIpAddress when the pick is wrong."
+      "description": "[L1][Category:PLC-Online][ONLINE-WRITE][PreCondition:Connect+OpenProject+CompileSoftware+CheckDownloadReadiness] Download the compiled PLC program to the physical CPU over the network. The CPU will stop briefly during download and restart automatically (controlled by startAfterDownload). SAFETY: Verify no personnel are near the machine before downloading. This changes live PLC behavior. Workflow: Connect → OpenProject → CompileSoftware → CheckDownloadReadiness → DownloadToPlc → GetOnlineState. On success State=Success or Warning. On Error check Errors[] for details. Default options (keepActualValues=true, consistentBlocksOnly=true) are safe for most scenarios. Set keepActualValues=false only when DB initial values must be reset — this is irreversible. On a multi-NIC PC the PG/PC interface is picked automatically (the adapter sharing a subnet with the CPU); Meta.pgPcRoute reports which one was used. Override with pgPcInterface / targetIpAddress when the pick is wrong."
     },
     {
       "name": "DumpDeviceAttributes",
@@ -1499,7 +1499,7 @@
       "parameters": [
         "softwarePath"
       ],
-      "description": "[L2][Category:PLC-Online][PreCondition:Connect+OpenProject] List all force table names in the PLC software. Force tables configure which variables are continuously forced to specific values while the CPU is online. Use SetForceTableEntry to configure entries, then go online for the forces to take effect."
+      "description": "[L2][Category:PLC-Online][PreCondition:Connect+OpenProject] List all force table names in the PLC software. Force tables configure which variables are continuously forced to specific values while the CPU is online. Read-only: this server exposes NO tool for creating or editing force entries — forcing overrides live PLC logic (a forced output stays forced regardless of what the program writes) and is deliberately kept out of the AI tool surface. Create or edit force entries in the TIA Portal UI. For a one-shot value written from a watch table instead, use SetWatchTableModifyValue (the variable reverts to PLC logic afterwards)."
     },
     {
       "name": "GetPlcRunStateS7",
@@ -1616,7 +1616,7 @@
       "parameters": [
         "softwarePath"
       ],
-      "description": "[L2][Category:PLC-TechnologyObjects][PreCondition:Connect+OpenProject] List all Technology Objects (TOs) in the PLC software: axes, cams, measuring inputs, etc. Returns each TO's Name, type (OfSystemLibElement), and firmware version (OfSystemLibVersion). Use this to discover TO names before ExportTechnologyObject or GetAxisParameters. TOs are stored as TechnologicalInstanceDB instances in the TechnologicalObjectGroup."
+      "description": "[L2][Category:PLC-TechnologyObjects][PreCondition:Connect+OpenProject] List all Technology Objects (TOs) in the PLC software: axes, cams, measuring inputs, etc. Returns each TO's Name, type (OfSystemLibElement), and firmware version (OfSystemLibVersion). Use this to discover TO names before ExportTechnologyObject. No tool returns axis/TO parameter values directly — export the TO with ExportTechnologyObject and read the XML file. TOs are stored as TechnologicalInstanceDB instances in the TechnologicalObjectGroup."
     },
     {
       "name": "GetTypeInfo",
@@ -2550,7 +2550,7 @@
         "modifyValue",
         "trigger"
       ],
-      "description": "[L2][Category:PLC-Online][ONLINE-WRITE][PreCondition:Connect+OpenProject+GoOnline] Configure a watch table entry to write a value to a PLC variable once (or on a trigger). This is an OFFLINE CONFIGURATION step — the value is written to the PLC only when TIA Portal is online and the trigger fires. Trigger options: Permanent (every cycle), PermanentAtStart (every cycle, at scan start), OnceOnlyAtStart (single write at scan start), PermanentAtEnd, OnceOnlyAtEnd, OnceOnlyAtStop. Use GoOnline before calling this for the write to reach the PLC. Does NOT use Force — variable reverts to PLC logic after the modify. To hold a value persistently, use SetForceTableEntry instead. Example: SetWatchTableModifyValue('PLC_1', 'Debug_WT', 'DB1.DBX0.0', 'TRUE', 'OnceOnlyAtStart')"
+      "description": "[L2][Category:PLC-Online][ONLINE-WRITE][PreCondition:Connect+OpenProject+GoOnline] Configure a watch table entry to write a value to a PLC variable once (or on a trigger). This is an OFFLINE CONFIGURATION step — the value is written to the PLC only when TIA Portal is online and the trigger fires. Trigger options: Permanent (every cycle), PermanentAtStart (every cycle, at scan start), OnceOnlyAtStart (single write at scan start), PermanentAtEnd, OnceOnlyAtEnd, OnceOnlyAtStop. Use GoOnline before calling this for the write to reach the PLC. SAFETY: the target is a variable in the physical CPU, not a simulation. The moment the trigger fires the value lands on the real address — if that address is a coil, a valve, a contactor or a drive enable, the machine moves at that instant, with no acknowledgement step. Before calling, know exactly what the address drives and confirm nobody is at or inside the machine. The resulting physical motion is NOT undone by calling this tool again with another value; the equipment stays wherever it moved to. Not a Force: this writes the value once per trigger event and the variable then follows PLC logic again (a force would keep overriding the program continuously). This server exposes no tool for force entries — GetPlcForceTables only lists them; use TIA Portal directly to force a value. Example: SetWatchTableModifyValue('PLC_1', 'Debug_WT', 'DB1.DBX0.0', 'TRUE', 'OnceOnlyAtStart')"
     },
     {
       "name": "SyncVersionControlWorkspace",
