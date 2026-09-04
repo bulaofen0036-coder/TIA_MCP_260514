@@ -964,7 +964,19 @@ namespace TiaMcpServer.Siemens
 
             for (int index = 0; index < pathSegments.Length; index++)
             {
-                deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index);
+                deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index, out var anchorMatched);
+
+                // 这个循环是有意宽松的：它允许调用方省掉前缀（"PLC_1/AI 2_1" 而不是
+                // "S7-1200 station_1/PLC_1/AI 2_1"），做法是匹配不上就把窗口往后滑一格再试。
+                // 但窗口滑动必须只用于「这一段根本不是这层的东西」，**不能用于
+                // 「这一段对上了、后面某一段对不上」** —— 那种情况下往后滑，最终会被
+                // SelectMany 扫到路径中间的某一段并原样返回，于是「路径打错一段」
+                // 静默变成「拿到它的父级设备项」：读地址读到父级的（空）清单、
+                // 改地址改到父级头上。调用方看不出任何异常。
+                if (anchorMatched)
+                {
+                    return deviceItem;
+                }
 
                 if (deviceItem == null)
                 {
@@ -975,7 +987,10 @@ namespace TiaMcpServer.Siemens
                         devices = group.Devices;
                         if (devices != null)
                         {
-                            deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index + 1);
+                            // 这里丢弃 anchorMatched 是有意的：设备组可以嵌套
+                            // （"GroupA/GroupB/Device/Item"），下一段对不上组内设备属于正常，
+                            // 要继续往 group.Groups 里找，此处必须允许窗口滑动。
+                            deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index + 1, out _);
                         }
 
                         if (deviceItem != null)
@@ -997,11 +1012,17 @@ namespace TiaMcpServer.Siemens
             return deviceItem;
         }
 
-        private static DeviceItem? GetDeviceItemFromDevice(string[] pathSegments, DeviceComposition? devices, int index)
+        /// <param name="anchorMatched">
+        /// 本层是否**认领**了 pathSegments[index]（匹配到同名 Device 或 DeviceItem）。
+        /// 认领了却返回 null，意思是「锚点对上了，但后面某一段不存在」——
+        /// 调用方必须就此判定失败，不能再把窗口往后滑（滑动会让错误路径解析成祖先节点）。
+        /// </param>
+        private static DeviceItem? GetDeviceItemFromDevice(string[] pathSegments, DeviceComposition? devices, int index, out bool anchorMatched)
         {
             string segment = pathSegments[index];
             string nextSegment = index + 1 < pathSegments.Length ? pathSegments[index + 1] : string.Empty;
 
+            anchorMatched = false;
             DeviceItem? deviceItem = null;
 
             // a pc based plc has a Device.Name = 'PC-System_1' or something like that, which is visible in the TIA-Portal IDE
@@ -1009,6 +1030,7 @@ namespace TiaMcpServer.Siemens
             var device = devices.FirstOrDefault(d => d.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
             if (device != null)
             {
+                anchorMatched = true;
                 if (string.IsNullOrWhiteSpace(nextSegment))
                 {
                     deviceItem = device.DeviceItems.FirstOrDefault(di => di.Name.Equals(segment, StringComparison.OrdinalIgnoreCase))
@@ -1035,6 +1057,19 @@ namespace TiaMcpServer.Siemens
                 deviceItem = devices
                 .SelectMany(d => d.DeviceItems)
                 .FirstOrDefault(di => di.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+
+                // 这一段被认领了就得把**剩下的段也走完**。原来这里找到就直接返回，
+                // 后面的段整段被忽略：'安全PLC/不存在的模块' 会返回 '安全PLC' 本身。
+                if (deviceItem != null)
+                {
+                    anchorMatched = true;
+                    for (var next = index + 1; deviceItem != null && next < pathSegments.Length; next++)
+                    {
+                        var wanted = pathSegments[next];
+                        deviceItem = deviceItem.DeviceItems.FirstOrDefault(
+                            di => di.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
             }
 
             return deviceItem;
