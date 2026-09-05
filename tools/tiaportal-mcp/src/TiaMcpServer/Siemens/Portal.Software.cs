@@ -1176,9 +1176,22 @@ namespace TiaMcpServer.Siemens
         public List<JsonObject> GetTechnologyObjects(string softwarePath)
         {
             var result = new List<JsonObject>();
-            if (IsProjectNull()) return result;
+            // 这三条原来都返回空列表，工具层于是报「在 'XXX' 里找到 0 个技术对象」——
+            // 「没连项目」「路径写错」「枚举炸了」全被说成了「这个 PLC 没有技术对象」。
+            // 空列表只有一个合法含义：**解析到了这个 PLC，它确实没有 TO**。
+            if (IsProjectNull())
+            {
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "GetTechnologyObjects: no project is open. Call Connect + OpenProject "
+                    + "(or AttachToOpenProject) first.");
+            }
+
             var plc = GetPlcSoftware(softwarePath);
-            if (plc == null) return result;
+            if (plc == null)
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GetTechnologyObjects: PLC software not found at '{softwarePath}'." + AvailablePlcPathsSuffix());
+            }
 
             try
             {
@@ -1203,6 +1216,11 @@ namespace TiaMcpServer.Siemens
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "GetTechnologyObjects failed for {SoftwarePath}", softwarePath);
+                // 原来吞掉异常返回已收集的部分 —— 「少了几个 TO」比「一个都没有」更难发现，
+                // 因为它看起来完全正常。
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetTechnologyObjects failed halfway through '{softwarePath}': {ex.Message}. "
+                    + "The list would have been INCOMPLETE, so it is not returned.", null, ex);
             }
             return result;
         }
@@ -1341,14 +1359,12 @@ namespace TiaMcpServer.Siemens
             var softwareContainer = GetSoftwareContainer(softwarePath);
             if (softwareContainer?.Software == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "HMI software not found",
-                    ObjectKind = "Software",
-                    ObjectPath = softwarePath,
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"HMI software not found: {softwarePath}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var sw = softwareContainer.Software;
@@ -1379,28 +1395,24 @@ namespace TiaMcpServer.Siemens
             var softwareContainer = GetSoftwareContainer(softwarePath);
             if (softwareContainer?.Software == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "HMI software not found",
-                    ObjectKind = "HmiScreen",
-                    ObjectPath = $"{softwarePath}:{screenName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"HMI software not found: {$"{softwarePath}:{screenName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var sw = softwareContainer.Software;
             var screen = TryFindByNameInCollection(sw, new[] { "Screens", "ScreenFolder" }, screenName);
             if (screen == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Screen not found",
-                    ObjectKind = "HmiScreen",
-                    ObjectPath = $"{softwarePath}:{screenName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Screen not found: {$"{softwarePath}:{screenName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             return new ModelContextProtocol.ResponseObjectDescribe
@@ -1430,28 +1442,24 @@ namespace TiaMcpServer.Siemens
             var softwareContainer = GetSoftwareContainer(softwarePath);
             if (softwareContainer?.Software == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "HMI software not found",
-                    ObjectKind = "HmiTagTable",
-                    ObjectPath = $"{softwarePath}:{tagTableName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"HMI software not found: {$"{softwarePath}:{tagTableName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var sw = softwareContainer.Software;
             var table = TryFindHmiTagTable(sw, tagTableName);
             if (table == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Tag table not found",
-                    ObjectKind = "HmiTagTable",
-                    ObjectPath = $"{softwarePath}:{tagTableName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Tag table not found: {$"{softwarePath}:{tagTableName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             return new ModelContextProtocol.ResponseObjectDescribe
@@ -1481,41 +1489,35 @@ namespace TiaMcpServer.Siemens
             var sc = GetSoftwareContainer(softwarePath);
             if (sc?.Software == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "HMI software not found",
-                    ObjectKind = "HmiTag",
-                    ObjectPath = $"{softwarePath}:{tagTableName}:{tagName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"HMI software not found: {$"{softwarePath}:{tagTableName}:{tagName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var sw = sc.Software;
             var table = TryFindHmiTagTable(sw, tagTableName);
             if (table == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Tag table not found",
-                    ObjectKind = "HmiTag",
-                    ObjectPath = $"{softwarePath}:{tagTableName}:{tagName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Tag table not found: {$"{softwarePath}:{tagTableName}:{tagName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var tagsComp = table.GetType().GetProperty("Tags")?.GetValue(table);
             if (tagsComp == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "tagTable.Tags not found",
-                    ObjectKind = "HmiTag",
-                    ObjectPath = $"{softwarePath}:{tagTableName}:{tagName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"tagTable.Tags not found: {$"{softwarePath}:{tagTableName}:{tagName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             object? tagObj = null;
@@ -1541,14 +1543,12 @@ namespace TiaMcpServer.Siemens
 
             if (tagObj == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Tag not found",
-                    ObjectKind = "HmiTag",
-                    ObjectPath = $"{softwarePath}:{tagTableName}:{tagName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Tag not found: {$"{softwarePath}:{tagTableName}:{tagName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             return new ModelContextProtocol.ResponseObjectDescribe
@@ -1578,41 +1578,35 @@ namespace TiaMcpServer.Siemens
             var sc = GetSoftwareContainer(softwarePath);
             if (sc?.Software == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "HMI software not found",
-                    ObjectKind = "HmiScreenItem",
-                    ObjectPath = $"{softwarePath}:{screenName}:{itemName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"HMI software not found: {$"{softwarePath}:{screenName}:{itemName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var sw = sc.Software;
             var screen = TryFindByNameInCollection(sw, new[] { "Screens", "ScreenFolder" }, screenName);
             if (screen == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Screen not found",
-                    ObjectKind = "HmiScreenItem",
-                    ObjectPath = $"{softwarePath}:{screenName}:{itemName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Screen not found: {$"{softwarePath}:{screenName}:{itemName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             var itemsComp = screen.GetType().GetProperty("ScreenItems")?.GetValue(screen);
             if (itemsComp == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "screen.ScreenItems not found",
-                    ObjectKind = "HmiScreenItem",
-                    ObjectPath = $"{softwarePath}:{screenName}:{itemName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"screen.ScreenItems not found: {$"{softwarePath}:{screenName}:{itemName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             object? itemObj = null;
@@ -1635,14 +1629,12 @@ namespace TiaMcpServer.Siemens
 
             if (itemObj == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Screen item not found",
-                    ObjectKind = "HmiScreenItem",
-                    ObjectPath = $"{softwarePath}:{screenName}:{itemName}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」返回一条正常响应 + 空成员表，调用方看到的是 isError=false，
+                // 会把「我路径写错了」记成「这个对象确实没有任何成员」。Describe 系工具正是
+                // 用来摸索路径的，摸错必须响。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"Screen item not found: {$"{softwarePath}:{screenName}:{itemName}"}. Resolve the exact path first "
+                    + "(GetProjectTree / GetDevices / GetHmiScreens / GetHmiTagTables).");
             }
 
             return new ModelContextProtocol.ResponseObjectDescribe

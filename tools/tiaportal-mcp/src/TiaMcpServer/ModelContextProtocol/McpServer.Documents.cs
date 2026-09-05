@@ -570,6 +570,12 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 return Portal.DescribeObject(objectKind, objectPath, softwarePath, maxMembers);
             }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
+            }
             catch (Exception ex) when (ex is not McpException)
             {
                 throw new McpException($"Unexpected error describing object: {ex.Message}{McpHints.Recovery(ex)}", ex, McpErrorCode.InternalError);
@@ -586,6 +592,12 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 return Portal.GetObjectProperty(objectKind, objectPath, propertyPath, softwarePath);
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -604,6 +616,12 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 return Portal.ListObjectChildren(objectKind, objectPath, collectionProperty, softwarePath, limit);
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -628,6 +646,12 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 return Portal.InvokeObject(objectKind, objectPath, methodName, args, softwarePath, allowWrite);
             }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
+            }
             catch (Exception ex) when (ex is not McpException)
             {
                 throw new McpException($"Unexpected error invoking method: {ex.Message}{McpHints.Recovery(ex)}", ex, McpErrorCode.InternalError);
@@ -645,6 +669,12 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 return Portal.DescribeService(objectKind, objectPath, serviceTypeSuffix, softwarePath, maxMembers);
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -665,6 +695,12 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 return Portal.InvokeService(objectKind, objectPath, serviceTypeSuffix, methodName, ToArgsArray(args), softwarePath, allowWrite);
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {

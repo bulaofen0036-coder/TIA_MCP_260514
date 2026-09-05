@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Siemens.Engineering.Online;
 using System;
 using System.Collections;
@@ -16,18 +16,40 @@ namespace TiaMcpServer.Siemens
     {
         public ResponseOnlineState GetOnlineState(string softwarePath)
         {
+            // 这两条原来都返回 State="Offline"。那是**给一个没测过的问题一个确定的答案**：
+            // 调用方读 isOnline=false 会当成「已确认这台 PLC 不在线」，而真相是
+            // 「没连项目」或「路径写错，压根没这台 PLC」。比不回答更糟。
             if (IsProjectNull())
-                return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = "No project open." };
+            {
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "GetOnlineState: no project is open, so the online state was NOT measured. "
+                    + "Call Connect + OpenProject (or AttachToOpenProject) first.");
+            }
 
             var plcSoftware = GetPlcSoftware(softwarePath);
             if (plcSoftware == null)
-                return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = $"PLC software not found: '{softwarePath}'." };
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GetOnlineState: PLC software not found at '{softwarePath}', so the online state was NOT measured."
+                    + AvailablePlcPathsSuffix());
+            }
 
             try
             {
                 var provider = ResolvePlcService<OnlineProvider>(softwarePath, plcSoftware);
                 if (provider == null)
-                    return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = "OnlineProvider service not available." };
+                {
+                    // 服务拿不到 = 测不了，不是"离线"。用 Unknown 如实表达（本文件下方
+                    // 的异常分支早就是这么写的，这里跟它对齐）。
+                    return new ResponseOnlineState
+                    {
+                        State = "Unknown",
+                        IsOnline = false,
+                        IsReachable = false,
+                        Message = "OnlineProvider service not available on this PLC, so the online state was NOT measured. "
+                                + "State 'Unknown' means undetermined — it does NOT mean the CPU is offline."
+                    };
+                }
 
                 var state = provider.State;
                 var stateName = state.ToString();
@@ -51,18 +73,40 @@ namespace TiaMcpServer.Siemens
 
         public ResponseOnlineState GoOnline(string softwarePath, string? ipAddress = null, string? password = null)
         {
+            // 这两条原来都返回 State="Offline"。那是**给一个没测过的问题一个确定的答案**：
+            // 调用方读 isOnline=false 会当成「已确认这台 PLC 不在线」，而真相是
+            // 「没连项目」或「路径写错，压根没这台 PLC」。比不回答更糟。
             if (IsProjectNull())
-                return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = "No project open." };
+            {
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "GoOnline: no project is open, so the online state was NOT measured. "
+                    + "Call Connect + OpenProject (or AttachToOpenProject) first.");
+            }
 
             var plcSoftware = GetPlcSoftware(softwarePath);
             if (plcSoftware == null)
-                return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = $"PLC software not found: '{softwarePath}'." };
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GoOnline: PLC software not found at '{softwarePath}', so the online state was NOT measured."
+                    + AvailablePlcPathsSuffix());
+            }
 
             try
             {
                 var provider = ResolvePlcService<OnlineProvider>(softwarePath, plcSoftware);
                 if (provider == null)
-                    return new ResponseOnlineState { State = "Offline", IsOnline = false, IsReachable = false, Message = "OnlineProvider service not available." };
+                {
+                    // 服务拿不到 = 测不了，不是"离线"。用 Unknown 如实表达（本文件下方
+                    // 的异常分支早就是这么写的，这里跟它对齐）。
+                    return new ResponseOnlineState
+                    {
+                        State = "Unknown",
+                        IsOnline = false,
+                        IsReachable = false,
+                        Message = "OnlineProvider service not available on this PLC, so the online state was NOT measured. "
+                                + "State 'Unknown' means undetermined — it does NOT mean the CPU is offline."
+                    };
+                }
 
                 using var passwordScope = AttachPasswordHandler(provider.Configuration, password);
 

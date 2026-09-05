@@ -100,8 +100,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeHmiSoftware(softwarePath, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -118,8 +133,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeHmiScreen(softwarePath, screenName, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -136,8 +166,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeHmiTagTable(softwarePath, tagTableName, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -155,8 +200,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeHmiTag(softwarePath, tagTableName, tagName, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -179,8 +239,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeHmiScreenItem(softwarePath, screenName, itemName, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -199,8 +274,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeObjectProperty(objectKind, objectPath, propertyPath, softwarePath, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -1680,8 +1770,23 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var res = Portal.DescribeUnifiedHmiButtonEventScript(hmiSoftwarePath, screenName, buttonName, eventType, maxMembers);
-                res.Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = (res.Members != null && res.Members.Any()) };
+                // success 原来写的是「成员表非空」。那是把**空**当成了**失败**：
+                // 一个真实存在、但确实没有成员的对象会被报成 success=false，
+                // 调用方于是去"修"一个根本没坏的东西。走到这一行就说明对象已经解析到了
+                // （解析不到在 Portal 层就抛了），这就是成功；空不空看 memberCount。
+                res.Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["memberCount"] = res.Members?.Count() ?? 0
+                };
                 return res;
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {
@@ -2376,10 +2481,21 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 var names = Portal.GetPlcForceTables(softwarePath);
+                if (names == null)
+                {
+                    // 原来这里返回 Items=[] + 一句「not found」的**正常**响应。
+                    // 只读 Items 的调用方看到的是「这台 PLC 没有强制表」——和「你路径写错了」
+                    // 是完全不同的结论，而它分辨不出来。
+                    throw new McpException(
+                        $"GetPlcForceTables: PLC software not found at '{softwarePath}'. "
+                        + "Use GetProjectTree to get the exact PLC path.",
+                        McpErrorCode.InvalidParams);
+                }
+
                 return new ResponseStringList
                 {
-                    Items = names ?? new List<string>(),
-                    Message = names == null ? $"PLC software '{softwarePath}' not found." : $"{names.Count} force table(s) found.",
+                    Items = names,
+                    Message = $"{names.Count} force table(s) found.",
                     Meta = new JsonObject { ["softwarePath"] = softwarePath, ["timestamp"] = DateTime.Now }
                 };
             }
@@ -3051,6 +3167,12 @@ namespace TiaMcpServer.ModelContextProtocol
                     Message = $"{typed.Length} technology object(s) found in '{softwarePath}'."
                 };
             }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
+            }
             catch (Exception ex) when (ex is not McpException)
             {
                 throw new McpException($"Unexpected error listing technology objects: {ex.Message}{McpHints.Recovery(ex)}", ex, McpErrorCode.InternalError);
@@ -3465,6 +3587,12 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 return Portal.GetOnlineState(softwarePath);
             }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
+            }
             catch (Exception ex) when (ex is not McpException)
             {
                 throw new McpException($"Unexpected error reading online state for '{softwarePath}': {ex.Message}{McpHints.Recovery(ex)}", ex, McpErrorCode.InternalError);
@@ -3829,6 +3957,12 @@ namespace TiaMcpServer.ModelContextProtocol
                 {
                     throw new McpException($"Failed retrieving software tree from '{softwarePath}'", McpErrorCode.InternalError);
                 }
+            }
+            catch (PortalException pex)
+            {
+                // 路径解析不到是调用方的参数问题，不是服务器内部意外错误。
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {

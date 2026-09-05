@@ -385,13 +385,26 @@ namespace TiaMcpServer.Siemens
                 }
                 else
                 {
-                    return $"No PLC software found at path: {softwarePath}";
+                    // 原来这里把一句「找不到」当作**树的内容**返回。工具层只判了
+                    // string.IsNullOrEmpty(tree)，非空即算成功 —— 于是路径写错会得到
+                    // outcome=Success + message「Software tree retrieved from 'XXX'」，
+                    // 而树体里写着找不到。两个信号互相矛盾，客户端只读 message 就被骗了。
+                    throw new PortalException(PortalErrorCode.NotFound,
+                        $"GetSoftwareTree: PLC software not found at '{softwarePath}'." + AvailablePlcPathsSuffix());
                 }
+            }
+            catch (PortalException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Error getting software tree for {SoftwarePath}", softwarePath);
-                return $"Error retrieving software tree: {ex.Message}";
+                // 同理：异常文本原来也被当成树返回，于是「遍历炸在半路」也是一次成功。
+                // 残缺的树比没有树更危险 —— 它看起来完全正常。
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"GetSoftwareTree failed halfway through '{softwarePath}': {ex.Message}. "
+                    + "The tree would have been INCOMPLETE, so it is not returned.", null, ex);
             }
         }
         
@@ -1746,14 +1759,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath,
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             return new ModelContextProtocol.ResponseObjectDescribe
@@ -1771,14 +1784,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = $"{objectPath}.{propertyPath}",
-                    TypeName = null,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             var v = GetPropertyPathValue(o, propertyPath);
@@ -1809,12 +1822,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectValue
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             var v = GetPropertyPathValue(o, propertyPath);
@@ -1848,14 +1863,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectChildren
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath,
-                    Collection = collectionProperty,
-                    Items = Array.Empty<string>()
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             var v = GetPropertyPathValue(o, collectionProperty);
@@ -2081,12 +2096,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectValue
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
             return InvokeOnInstance(o, objectKind, objectPath, methodName, args, allowWrite);
         }
@@ -2148,13 +2165,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectDescribe
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath,
-                    Members = Array.Empty<ModelContextProtocol.ObjectMember>()
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             var st = FindTypeBySuffix(serviceTypeSuffix!);
@@ -2208,12 +2226,14 @@ namespace TiaMcpServer.Siemens
             var o = ResolveObject(objectKind, objectPath, softwarePath);
             if (o == null)
             {
-                return new ModelContextProtocol.ResponseObjectValue
-                {
-                    Message = "Object not found",
-                    ObjectKind = objectKind,
-                    ObjectPath = objectPath
-                };
+                // 「找不到」必须是失败。原来这里返回一条 Message="Object not found" 的**正常**响应：
+                // 客户端看到的是 isError=false + 一张空成员表，模型据此断定「这个对象没有任何成员/属性」，
+                // 而真相是路径写错了。反射桥恰恰是**用来猜路径**的工具，猜错时它必须响，
+                // 否则每一次猜错都被记成一条「已确认为空」的事实，越猜越偏。
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"{objectKind} '{objectPath}' not found. Resolve the exact path first "
+                    + "(GetProjectTree / GetDeviceItemTree / GetSoftwareTree / GetBlocksWithHierarchy); "
+                    + "for objectKind=Block/Type also pass softwarePath.");
             }
 
             var st = FindTypeBySuffix(serviceTypeSuffix!);

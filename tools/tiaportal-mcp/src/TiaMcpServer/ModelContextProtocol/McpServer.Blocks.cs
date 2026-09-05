@@ -362,31 +362,38 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 Portal.ImportBlock(softwarePath, groupPath, importPath);
 
-                // Read-back verification: confirm the block landed (name inferred from the XML file name).
-                bool verified = false;
-                string verifyDetail;
-                try
+                // 读回校验的判据是 **XML 里声明的块名 + 块号**，不是 XML 文件名。
+                // 原来按文件名找：把 OB100 的 XML 存成 OB100.xml 导进去，块在 TIA 里
+                // 实际叫 Startup，于是一次成功的导入被报成「NOT found after import」——
+                // 调用方照着这个结论去重导、去排查一个根本不存在的问题。
+                var outcome = VerifyImportedBlock(softwarePath, importPath);
+
+                if (outcome.State == PlcBlockVerificationState.Mismatch)
                 {
-                    var name = System.IO.Path.GetFileNameWithoutExtension(importPath);
-                    var escaped = Regex.Escape(name);
-                    var found = Portal.GetBlocks(softwarePath, $"^{escaped}$");
-                    if (found == null || found.Count == 0) found = Portal.GetBlocks(softwarePath, escaped);
-                    verified = found != null && found.Count > 0;
-                    verifyDetail = verified
-                        ? $"block '{name}' present after import"
-                        : $"block '{name}' NOT found after import (the XML's block name may differ from the file name)";
+                    // 确知不符：块进去了，但和 XML 声明的不是同一个东西。
+                    // 这是**可判定的失败**，不能返回一条带 ⚠ 的正常响应了事。
+                    throw new McpException(
+                        $"ImportBlock: the block was imported from '{importPath}' into '{groupPath}', "
+                        + $"but read-back does NOT match what the XML declares: {outcome.Detail}. "
+                        + "⚠ The project HAS been modified — inspect it in TIA before retrying.",
+                        McpErrorCode.InternalError);
                 }
-                catch (Exception vex) { verifyDetail = "readback skipped: " + vex.Message; }
+
+                bool verified = outcome.State == PlcBlockVerificationState.Verified;
 
                 return new ResponseImportBlock
                 {
-                    Message = $"Block imported from '{importPath}' to '{groupPath}'" + (verified ? " (verified)" : ""),
+                    Message = verified
+                        ? $"Block imported from '{importPath}' to '{groupPath}' (verified)"
+                        : $"⚠ 未验证：block imported from '{importPath}' to '{groupPath}', but the read-back "
+                          + $"could not confirm it ({outcome.Detail}). Confirm with GetBlocks / GetBlockInfo "
+                          + "before treating this as done.",
                     Meta = new JsonObject
                     {
                         ["timestamp"] = DateTime.Now,
                         ["success"] = true,
                         ["verified"] = verified,
-                        ["verifyDetail"] = verifyDetail
+                        ["verifyDetail"] = outcome.Detail
                     }
                 };
             }
