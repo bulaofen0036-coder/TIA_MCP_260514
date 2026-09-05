@@ -149,6 +149,15 @@ namespace TiaMcpServer.Siemens
         /// </remarks>
         public List<string>? GetPlcTagTables(string softwarePath)
         {
+            return GetPlcTagTables(softwarePath, out _);
+        }
+
+        /// <summary>
+        /// 同上，外加一份「走过了什么」的诊断。空清单时它是唯一的证据来源。
+        /// </summary>
+        public List<string>? GetPlcTagTables(string softwarePath, out TagTableWalkDiagnostics diagnostics)
+        {
+            diagnostics = new TagTableWalkDiagnostics();
             if (IsProjectNull()) return null;
             var plc = GetPlcSoftware(softwarePath);
             if (plc == null) return null;
@@ -159,9 +168,11 @@ namespace TiaMcpServer.Siemens
                     $"Tag table group not found on '{softwarePath}' (plcType={plc.GetType().FullName}). " +
                     "Tag tables cannot be enumerated for this software object.");
 
+            diagnostics.RootGroupType = group.GetType().FullName ?? group.GetType().Name;
             var result = new List<string>();
             var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            CollectTagTableNames(group, "", result, visited);
+            CollectTagTableNames(group, "", result, visited, diagnostics);
+            diagnostics.TablesFound = result.Count;
             return result;
         }
 
@@ -202,11 +213,61 @@ namespace TiaMcpServer.Siemens
                // HMI-shaped software hangs the composition straight off the root.
                ?? (TryGetPropertyValue(plc, "TagTables") != null ? plc : null);
 
-        private static void CollectTagTableNames(object group, string prefix, List<string> result, HashSet<object> visited)
+
+        /// <summary>
+        /// 枚举变量表时**顺手记下走过了什么**，专门给「返回空清单」这种情况用。
+        ///
+        /// 为什么要有它：空清单有三种完全不同的成因 —— 这个 PLC 确实没有表、
+        /// TagTables 属性在这个版本上叫别的名字、读属性时抛了异常被吞掉。
+        /// 三者返回的东西一模一样，调用方（和维护者）无从分辨，
+        /// 用户报「V20 上枚举返回空但删除工具能找到同一张表」时，我们手上没有任何证据。
+        /// 有了这几行，空清单至少能自证是哪一种。
+        /// </summary>
+        public sealed class TagTableWalkDiagnostics
+        {
+            public string RootGroupType { get; set; } = "";
+            public bool TagTablesPropertyFound { get; set; }
+            public string? TagTablesPropertyError { get; set; }
+            public int GroupsVisited { get; set; }
+            public int TablesFound { get; set; }
+            public List<string> Notes { get; } = new List<string>();
+        }
+
+        private static void CollectTagTableNames(object group, string prefix, List<string> result,
+            HashSet<object> visited, TagTableWalkDiagnostics? diag = null)
         {
             if (!visited.Add(group)) return;
+            if (diag != null) diag.GroupsVisited++;
 
-            var tables = TryGetPropertyValue(group, "TagTables");
+            // 直接反射一次，把「属性不存在」「读属性抛了」「读到了但是 null」分开记。
+            // TryGetPropertyValue 会把这三种全折成 null —— 那正是空清单无法自证的根因。
+            object? tables = null;
+            if (diag != null && string.IsNullOrEmpty(prefix))
+            {
+                var prop = group.GetType().GetProperty("TagTables",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (prop == null)
+                {
+                    diag.Notes.Add("根组上没有 TagTables 属性（type=" + group.GetType().Name + "）");
+                }
+                else
+                {
+                    diag.TagTablesPropertyFound = true;
+                    try { tables = prop.GetValue(group); }
+                    catch (Exception ex)
+                    {
+                        diag.TagTablesPropertyError = ex.GetBaseException().Message;
+                        diag.Notes.Add("读 TagTables 抛异常：" + diag.TagTablesPropertyError);
+                    }
+                    if (tables == null && diag.TagTablesPropertyError == null)
+                        diag.Notes.Add("TagTables 属性存在但取到 null");
+                }
+            }
+            else
+            {
+                tables = TryGetPropertyValue(group, "TagTables");
+            }
+
             if (tables is IEnumerable tEnum and not string)
             {
                 foreach (var t in tEnum)
@@ -226,7 +287,7 @@ namespace TiaMcpServer.Siemens
                     if (sub == null) continue;
                     var gname = TryGetPropertyValue(sub, "Name")?.ToString() ?? string.Empty;
                     var next = string.IsNullOrEmpty(prefix) ? gname : prefix + "/" + gname;
-                    CollectTagTableNames(sub, next, result, visited);
+                    CollectTagTableNames(sub, next, result, visited, diag);
                 }
             }
         }

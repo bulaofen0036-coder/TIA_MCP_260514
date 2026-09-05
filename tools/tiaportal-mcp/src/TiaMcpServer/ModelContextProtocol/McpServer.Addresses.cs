@@ -56,10 +56,22 @@ namespace TiaMcpServer.ModelContextProtocol
 
                 // addresses==null（没连上/路径不存在）上面已经抛掉了；走到这里拿到的是真清单，
                 // 空清单就是"这个设备项确实不占 I/O"。
-                var msg = addresses.Count == 0
-                    ? $"设备项 '{deviceItemPath}' 上没有任何 I/O 地址。"
-                      + "常见于它是机架/电源/接口这类本来就不占 I/O 的对象。"
-                    : $"设备项 '{deviceItemPath}' 上有 {addresses.Count} 条 I/O 地址。";
+                // 空清单时别只说「没有」。地址在分布式 IO（ET200 系列）和机架式站上
+                // 常常挂在**子项**而不是模块对象本身，只回一句「没有任何 I/O 地址」
+                // 会让人以为是工具读不到，转头去查一个没问题的组态。
+                var childHints = addresses.Count == 0
+                    ? Portal.DescribeChildItemsWithAddresses(deviceItemPath)
+                    : new System.Collections.Generic.List<string>();
+
+                var msg = addresses.Count > 0
+                    ? $"设备项 '{deviceItemPath}' 上有 {addresses.Count} 条 I/O 地址。"
+                    : childHints.Count > 0
+                        ? $"设备项 '{deviceItemPath}' **本级**没有 I/O 地址，但它的子项有 —— "
+                          + $"地址挂在子项上（分布式 IO 常见）。改用这些路径：{string.Join("；", childHints)}"
+                        : $"设备项 '{deviceItemPath}' 上没有任何 I/O 地址，它的直接子项也没有。"
+                          + "常见于它是机架/电源/接口这类本来就不占 I/O 的对象；"
+                          + "若你确信它应该有（例如分布式 IO 模块），用 GetDeviceItemTree 看一眼层级，"
+                          + "地址可能挂在更深的一层。";
 
                 return new ResponseMessage
                 {
@@ -70,6 +82,8 @@ namespace TiaMcpServer.ModelContextProtocol
                         ["deviceItemPath"] = deviceItemPath,
                         ["addressCount"] = addresses.Count,
                         ["addresses"] = arr,
+                        ["childItemsWithAddresses"] = new JsonArray(
+                            childHints.Select(h => (JsonNode)JsonValue.Create(h)!).ToArray()),
                         ["note"] = "startAddress/length 是引擎原值，未做任何换算。startAddress 为字节偏移。"
                     }
                 };

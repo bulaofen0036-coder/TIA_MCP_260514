@@ -2343,14 +2343,34 @@ namespace TiaMcpServer.ModelContextProtocol
         {
             try
             {
-                var items = Portal.GetPlcTagTables(softwarePath);
+                var items = Portal.GetPlcTagTables(softwarePath, out var walk);
                 if (items != null)
                 {
+                    // 空清单有三种完全不同的成因：这个 PLC 确实没有表 / TagTables 属性
+                    // 在这个版本上叫别的名字 / 读属性时抛了异常被吞掉。三者返回的东西
+                    // 一模一样，用户报「枚举返回空但删除工具能找到同一张表」时我们手上
+                    // 没有任何证据。所以空清单必须把「走过了什么」一并带回来。
+                    var meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = true };
+                    if (items.Count == 0)
+                    {
+                        meta["walkedGroupType"] = walk.RootGroupType;
+                        meta["tagTablesPropertyFound"] = walk.TagTablesPropertyFound;
+                        meta["tagTablesPropertyError"] = walk.TagTablesPropertyError;
+                        meta["groupsVisited"] = walk.GroupsVisited;
+                        meta["notes"] = new JsonArray(
+                            walk.Notes.Select(x => (JsonNode)JsonValue.Create(x)!).ToArray());
+                    }
+
                     return new ResponseStringList
                     {
-                        Message = $"PLC tag tables listed for '{softwarePath}'",
+                        Message = items.Count > 0
+                            ? $"PLC tag tables listed for '{softwarePath}'"
+                            : $"'{softwarePath}' 上没有枚举到任何变量表。这**不一定**表示它没有表 —— "
+                              + "读属性失败也长这样，所以 Meta 里带了这次遍历的证据"
+                              + "（walkedGroupType / tagTablesPropertyFound / tagTablesPropertyError / groupsVisited / notes）。"
+                              + "若你确信有表，把这几项贴给维护者。",
                         Items = items,
-                        Meta = new JsonObject { ["timestamp"] = DateTime.Now, ["success"] = true }
+                        Meta = meta
                     };
                 }
 

@@ -55,6 +55,34 @@ namespace TiaMcpServer.Siemens
             return ReadAddresses(item);
         }
 
+        /// <summary>
+        /// 一个设备项本身没有 I/O 地址时，看看它的**子项**有没有。
+        ///
+        /// 为什么需要：分布式 IO（ET200 系列）和不少机架式站，地址挂在子项而不是
+        /// 模块对象本身。只回一句「本设备项没有任何 I/O 地址」会让人以为工具读不到，
+        /// 于是去查一个没有问题的组态 —— 用户在 issue #33 里就是这么被卡住的。
+        /// 返回 "子项名 → 地址摘要" 的清单，只下钻一层（再深就变成整棵树了，噪音大于信息）。
+        /// </summary>
+        public List<string> DescribeChildItemsWithAddresses(string deviceItemPath)
+        {
+            var hints = new List<string>();
+            if (IsProjectNull()) return hints;
+            var item = GetDeviceItemByPath(deviceItemPath);
+            if (item == null) return hints;
+
+            foreach (DeviceItem child in item.DeviceItems)
+            {
+                if (child == null) continue;
+                List<IoAddressInfo> childAddresses;
+                try { childAddresses = ReadAddresses(child); }
+                catch { continue; }
+                if (childAddresses.Count == 0) continue;
+                hints.Add(child.Name + " → " + string.Join(", ",
+                    childAddresses.Select(a => a.IoType + " " + a.StartAddress + "(len " + a.Length + ")")));
+            }
+            return hints;
+        }
+
         private static List<IoAddressInfo> ReadAddresses(DeviceItem item)
         {
             var list = new List<IoAddressInfo>();
