@@ -1,5 +1,77 @@
 ﻿# Change Log
 
+## [2.7.1] - 2026-09-05 - 「路径写错却报成功」的一轮扫荡
+
+这一版没有新功能，全是修复，而且是同一族的：**把「没做成」说成一个确定的结论**。
+
+这类缺陷比崩溃危险得多。崩溃会让调用方停下来；一句「找到 0 个」「已下线」
+「0 处差异」会让它**继续往下走**，并把这个错误结论当作事实带进后面每一步。
+对着 AI 客户端尤其如此——它没有第二个信息源来质疑你。
+
+### 怎么找出来的
+
+新增发版前闸门 `scripts/Sweep-WrongPathHonesty.py`：拿真项目给**每个只读工具**
+喂一条不存在的路径，凡是「返回成功」的都列为嫌疑。第一轮跑出 10 个。
+
+这条检查**离线跑不了**（要判断"路径不存在时的反应"就得有真项目），所以它不在
+CI 里，是发版前的手工闸门。脚本自带反向哨兵：正确输入必须仍然成功——否则
+「所有工具一律报错」的坏实现也能满分通过，那时它测的就不是诚实，是「有没有全坏」。
+
+### 修复
+
+- **`CompareSoftwareToOnline`** —— 这批里最贵的一条。这个工具的全部价值就是回答
+  「要不要下载」。路径写错时它返回 `Entries=null` 的正常响应，调用方读到「0 处差异」，
+  得出「在线离线一致，不用下载」。比对**失败**时同样如此，而且其中一条路径还硬写
+  `IsOnline=true`——实测拿到的正是「The operation is not permitted in offline mode」，
+  即根本没在线，字段和消息自相矛盾。现在三条路径都明确失败，并写明
+  「NO comparison result — 不要当成 identical」。
+- **以 `Identical` 结尾的比对状态被算成差异**，把「一致」报成
+  「Compare complete: N differences」，可能诱发一次不必要的下载。
+- **`GoOffline`** —— 路径写错、或 `OnlineProvider` 拿不到（那一路 `provider?.GoOffline()`
+  **什么都没做**），都回一句「'X' is now offline」。调用方据此认为在线会话已断开，
+  实际它还挂着：后续 `CompileSoftware` / `Export*` 会被「not permitted in online mode」
+  挡住，现场 CPU 的编程连接也一直被占。
+- **`GetSoftwareTree`** —— 路径不存在时把一句「No PLC software found」当作**树的内容**
+  返回，工具层只判非空即算成功，于是 `message` 写着「Software tree retrieved from 'XXX'」
+  而树体里写着找不到。同一个 `catch` 还把异常文本也当成树返回，**遍历炸在半路也报成功**。
+  另外没连项目时返回空串，报出的是 `InternalError`「Failed retrieving」——最常见的一种错
+  （忘了 Connect）拿到的是最没用的一句话。
+- **`GetTechnologyObjects`** —— 「没连项目」「路径写错」「枚举炸了」三条全返回空列表，
+  报成「在 'XXX' 里找到 0 个技术对象」。空列表只有一个合法含义：
+  解析到了这个 PLC，它确实没有 TO。
+- **`GetOnlineState` / `GoOnline`** —— 对不存在的 PLC 返回 `State="Offline"`。这是
+  **给一个没测过的问题一个确定的答案**，调用方会当成「已确认不在线」。拿不到
+  `OnlineProvider` 时改报 `State="Unknown"` 并说明「未测量 ≠ 离线」。
+- **`GetPlcForceTables`** —— `Items=[]` + 一句 not found 的正常响应。
+- **反射桥 7 处**（`DescribeObject` / `DescribeObjectProperty` / `GetObjectProperty` /
+  `ListObjectChildren` / `InvokeObject` / `DescribeService` / `InvokeService`）和
+  **HMI Describe 族 13 处** —— 返回 `Message="Object not found"` + 空成员表。
+  反射桥恰恰是**用来猜路径**的工具，猜错必须响，否则每次猜错都被记成一条
+  「已确认为空」的事实，越猜越偏。这些路径现在报的是参数错误（`InvalidParams`），
+  不再是「服务器内部意外错误」。
+- **Describe 族的 `meta.success`** —— 原来写的是「成员表非空」，把**空**当成了**失败**：
+  真实存在但确实没有成员的对象被报成 `success=false`，调用方于是去「修」一个没坏的东西。
+  改为 `success=true` + `memberCount`。
+- **`ImportBlock` 的读回校验用文件名当块名** —— 把 OB100 的 XML 存成 `OB100.xml` 导进去，
+  块在 TIA 里实际叫 `Startup`，于是**一次成功的导入被报成「NOT found after import」**；
+  反过来，块若被静默降级（例如变成 OB1），光比名字也可能"对上"，只有块号抓得住。
+  改为按 XML 里声明的**块名 + 块号**比对：确知不符时明确失败并写明「工程已被改动」，
+  读不回来时返回但以「⚠ 未验证」开头。
+- **FB/FC 构建器的「StructuredText 内容不能为空」** —— 报错只报内部形参名
+  `structuredTextInnerXml`，而调用方填的是 `$.structuredText.operations`，照着报错改不动。
+
+剩余 3 个嫌疑（`GetOpcUaConfig` / `GetPutGetAccess` / `ProbePlcMonitorOnlineCapabilities`）
+返回里带明确的 `ok=false`，自洽，**有意保留**。
+
+### 验证
+
+真机跑在真实工程副本上（S7-1200 + S7-1500，V21）：嫌疑 **10 → 3**；
+没连项目时 `GetSoftwareTree` / `CompareSoftwareToOnline` 都明说要先 `Connect`；
+路径写错时 `GoOffline` / `Compare` 都失败并列出可用 PLC；
+**正确路径但离线时，错误指向在线状态而不是「找不到 PLC」**（这条专门防修过头）。
+反向哨兵确认 38 个只读工具用正确路径照旧成功。
+工具数不变（221），离线套件 126/126，死引用闸门 PASS。
+
 ## [2.7.0] - 2026-09-04 - 删除族、硬件 I/O 地址与插槽，以及一条静默错解析路径的修复
 
 这一版补的是**没有它就干不完活**的那类能力：以前能建块却删不掉块、能加整站却改不了
