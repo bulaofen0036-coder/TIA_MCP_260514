@@ -337,7 +337,13 @@ namespace TiaMcpServer.Siemens
 
             if (IsProjectNull())
             {
-                return string.Empty;
+                // 原来返回空串，工具层的 else 分支于是报「Failed retrieving software tree from 'X'」
+                // + InternalError —— 最常见的一种错（忘了 Connect）拿到的是最没用的一句话：
+                // 既没说该去 Connect，又把用户的操作顺序问题说成服务器内部错误。
+                // 同轮的 GetOnlineState / GetTechnologyObjects 对同一情形已经这么改了，这里补齐。
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "GetSoftwareTree: no project is open. Call Connect + OpenProject "
+                    + "(or AttachToOpenProject) first.");
             }
 
             try

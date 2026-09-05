@@ -3636,6 +3636,11 @@ namespace TiaMcpServer.ModelContextProtocol
             {
                 return Portal.GoOffline(softwarePath);
             }
+            catch (PortalException pex)
+            {
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
+            }
             catch (Exception ex) when (ex is not McpException)
             {
                 throw new McpException($"Unexpected error going offline for '{softwarePath}': {ex.Message}{McpHints.Recovery(ex)}", ex, McpErrorCode.InternalError);
@@ -3852,6 +3857,11 @@ namespace TiaMcpServer.ModelContextProtocol
             try
             {
                 return Portal.CompareSoftwareToOnline(softwarePath, maxDepth, maxEntries);
+            }
+            catch (PortalException pex)
+            {
+                throw new McpException(pex.Message, pex,
+                    pex.Code == PortalErrorCode.NotFound ? McpErrorCode.InvalidParams : McpErrorCode.InternalError);
             }
             catch (Exception ex) when (ex is not McpException)
             {

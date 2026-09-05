@@ -161,17 +161,37 @@ namespace TiaMcpServer.Siemens
 
         public ResponseMessage GoOffline(string softwarePath)
         {
+            // 下线失败必须看得见。原来这三条都返回一条 isError=false 的普通消息，
+            // 其中 provider 为 null 那条更是**什么都没做**却回一句「is now offline」——
+            // 调用方据此认为在线会话已经断开，实际它还挂着：后续 CompileSoftware / Export*
+            // 会被「not permitted in online mode」挡住，现场 CPU 的编程连接也一直被占。
             if (IsProjectNull())
-                return new ResponseMessage { Message = "No project open." };
+            {
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "GoOffline: no project is open, so nothing was taken offline. "
+                    + "Call Connect + OpenProject (or AttachToOpenProject) first.");
+            }
 
             var plcSoftware = GetPlcSoftware(softwarePath);
             if (plcSoftware == null)
-                return new ResponseMessage { Message = $"PLC software not found: '{softwarePath}'." };
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"GoOffline: PLC software not found at '{softwarePath}', so nothing was taken offline."
+                    + AvailablePlcPathsSuffix());
+            }
 
             try
             {
                 var provider = ResolvePlcService<OnlineProvider>(softwarePath, plcSoftware);
-                provider?.GoOffline();
+                if (provider == null)
+                {
+                    throw new PortalException(PortalErrorCode.OpennessError,
+                        $"GoOffline: OnlineProvider service is not available on '{softwarePath}', "
+                        + "so the offline transition was NOT performed. Any live online session is still open — "
+                        + "disconnect it in the TIA Portal UI before compiling or exporting.");
+                }
+
+                provider.GoOffline();
                 return new ResponseMessage { Message = $"'{softwarePath}' is now offline." };
             }
             catch (Exception ex)
@@ -225,12 +245,25 @@ namespace TiaMcpServer.Siemens
 
         public ResponseCompare CompareSoftwareToOnline(string softwarePath, int maxDepth = 4, int maxEntries = 200)
         {
+            // 这两条原来返回 Entries=null / Summary=null 的普通响应，调用方读到的是
+            // 「0 处差异」→ 得出「在线离线一致，不用下载」。本工具的全部价值就是回答
+            // 「要不要下载」，把「没比成」说成「一致」是这里能犯的最贵的错。
             if (IsProjectNull())
-                return new ResponseCompare { Message = "No project open.", IsOnline = false };
+            {
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "CompareSoftwareToOnline: no project is open, so NO comparison was performed. "
+                    + "Do not read this as 'offline and online are identical'. "
+                    + "Call Connect + OpenProject (or AttachToOpenProject) first.");
+            }
 
             var plcSoftware = GetPlcSoftware(softwarePath);
             if (plcSoftware == null)
-                return new ResponseCompare { Message = $"PLC software not found: '{softwarePath}'.", IsOnline = false };
+            {
+                throw new PortalException(PortalErrorCode.NotFound,
+                    $"CompareSoftwareToOnline: PLC software not found at '{softwarePath}', "
+                    + "so NO comparison was performed. Do not read this as 'identical'."
+                    + AvailablePlcPathsSuffix());
+            }
 
             try
             {
@@ -264,15 +297,29 @@ namespace TiaMcpServer.Siemens
                     Truncated = truncated
                 };
             }
+            // 比对**失败**时原来返回一条 isError=false 的普通 ResponseCompare：
+            // Entries=null、Summary=null，调用方读到的又是「0 处差异」→「一致，不用下载」。
+            // 而 TargetInvocationException 那一路还硬写 IsOnline=true —— 实测拿到的正是
+            // 「The operation is not permitted in offline mode」，即根本没在线，
+            // 消息和字段自相矛盾。比不出来就是比不出来，必须抛。
             catch (TargetInvocationException tie) when (tie.InnerException != null)
             {
                 _logger?.LogError(tie.InnerException, "CompareSoftwareToOnline failed for {SoftwarePath}", softwarePath);
-                return new ResponseCompare { Message = $"Compare failed: {tie.InnerException.Message}", IsOnline = true };
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"CompareSoftwareToOnline failed for '{softwarePath}': {tie.InnerException.Message} "
+                    + "NO comparison result is available — do not read this as 'offline and online are identical'. "
+                    + "Go online first (GoOnline) and retry.", null, tie.InnerException);
+            }
+            catch (PortalException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "CompareSoftwareToOnline failed for {SoftwarePath}", softwarePath);
-                return new ResponseCompare { Message = $"Compare failed: {ex.Message}" };
+                throw new PortalException(PortalErrorCode.OpennessError,
+                    $"CompareSoftwareToOnline failed for '{softwarePath}': {ex.Message} "
+                    + "NO comparison result is available — do not read this as 'identical'.", null, ex);
             }
         }
 
@@ -297,7 +344,12 @@ namespace TiaMcpServer.Siemens
             else summary[status] = 1;
 
             // Skip "Equal"/"None" entries; only report differences
-            bool isDifference = status != "Equal" && status != "None" && status != "Unknown";
+            // 实测出现过的真差异状态："RightMissing"（只在离线侧，没下载过）、
+            // "FolderContentsDifferent"；同族还有 "LeftMissing" / "ObjectsDifferent"。
+            // 以 "Identical" 结尾的状态是**一致**，漏掉这一条会把一致报成
+            // 「Compare complete: N differences」，诱发一次不必要的下载。
+            bool isDifference = status != "Equal" && status != "None" && status != "Unknown"
+                && !status.EndsWith("Identical", StringComparison.Ordinal);
             if (depth > 0 && isDifference)
             {
                 entries.Add(new CompareEntry
