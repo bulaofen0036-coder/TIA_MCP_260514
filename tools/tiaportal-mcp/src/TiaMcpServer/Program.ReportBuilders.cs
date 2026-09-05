@@ -1296,7 +1296,9 @@ namespace TiaMcpServer
                 if (string.IsNullOrWhiteSpace(script))
                     throw new InvalidOperationException("Generated action script is empty.");
 
-                root["ensureAction"] = ResponseMessageToJson(McpServer.EnsureUnifiedHmiButtonAction(hmiSoftwarePath, screenName, buttonName, eventType, actionKind, tagName));
+                // 这条 CLI 的全部目的就是取得真实 SyntaxCheck 证据，所以它显式打开开关；
+                // 默认关闭只针对普通写脚本路径（issue #36）。
+                root["ensureAction"] = ResponseMessageToJson(McpServer.EnsureUnifiedHmiButtonAction(hmiSoftwarePath, screenName, buttonName, eventType, actionKind, tagName, syntaxCheck: true));
                 var setMeta = root["ensureAction"]?["meta"]?["setMeta"] as JsonObject;
                 var syntaxErrorCount = setMeta?["syntaxErrorCount"]?.GetValue<int>() ?? -1;
                 var syntaxWarningCount = setMeta?["syntaxWarningCount"]?.GetValue<int>() ?? -1;

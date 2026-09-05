@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace TiaMcpServer.Tests
@@ -17,6 +17,7 @@ namespace TiaMcpServer.Tests
     {
         private static int _pass;
         private static int _fail;
+        private static int _skip;
 
         private static void Check(bool ok, string what)
         {
@@ -31,6 +32,17 @@ namespace TiaMcpServer.Tests
             }
         }
 
+        /// <summary>
+        /// 用例依赖仓外/仓内布局才拿得到的东西（如引擎源码）。拿不到就明确跳过并计数：
+        /// 「少跑了一批」和「全过了」必须在汇总行里长得不一样，否则换台机器跑
+        /// 就是个永远不响的报警器。
+        /// </summary>
+        private static void Skip(string what, string why)
+        {
+            _skip++;
+            Console.WriteLine("  SKIP: " + what + "  <- " + why);
+        }
+
         private static int Main()
         {
             Console.WriteLine("== 「执行 JSON 检查」不许是复述已知事实的同义反复 ==");
@@ -42,9 +54,12 @@ namespace TiaMcpServer.Tests
             Console.WriteLine("== 参数诊断 + 大响应寄存分页（坏了也悄无声息的两块）==");
             ExportsAndArgDiagnosticsTests.Run(Check);
 
+            Console.WriteLine("== Unified JS 脚本的 SyntaxCheck 默认关闭 + 进程级致命错不许被吞（issue #36）==");
+            UnifiedScriptSyntaxCheckTests.Run(Check, Skip);
+
             Console.WriteLine(_fail == 0
-                ? $"{_pass} passed, {_fail} failed."
-                : $"{_pass} passed, {_fail} failed.  <<< 有失败");
+                ? $"{_pass} passed, {_fail} failed, {_skip} skipped."
+                : $"{_pass} passed, {_fail} failed, {_skip} skipped.  <<< 有失败");
             return _fail == 0 ? 0 : 1;
         }
 
