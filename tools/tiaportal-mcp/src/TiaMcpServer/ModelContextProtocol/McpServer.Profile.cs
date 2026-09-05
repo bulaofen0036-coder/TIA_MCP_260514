@@ -29,6 +29,10 @@ namespace TiaMcpServer.ModelContextProtocol
             "RunCapabilitySelfTest", "RunOnlineMonitoringSafetySelfTest",
             // L1 — session / project lifecycle
             "Connect", "Disconnect", "ListPortalProcessProjects", "EnsureOpennessUserGroup",
+            // 用户在博途界面里开着工程时，Connect 会接管那个实例、OpenProject 又拒绝动它，
+            // 整台服务器就用不了了。这条出口必须在默认档里看得见 —— 挡掉它等于让
+            // 「用户正在用博途」变成一个无解的死局。
+            "ConnectIsolated",
             "OpenProject", "AttachToOpenProject", "CreateProject", "SaveProject", "CloseProject",
             "GetProject", "GetProjectTree", "ValidateAutomationContext",
             // L1 — read / understand

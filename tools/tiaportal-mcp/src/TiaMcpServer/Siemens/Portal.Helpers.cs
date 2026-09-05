@@ -1036,6 +1036,42 @@ namespace TiaMcpServer.Siemens
         /// 认领了却返回 null，意思是「锚点对上了，但后面某一段不存在」——
         /// 调用方必须就此判定失败，不能再把窗口往后滑（滑动会让错误路径解析成祖先节点）。
         /// </param>
+
+        /// <summary>
+        /// 在一组子设备项里按名字找一个，**允许名字本身含 '/'**。
+        ///
+        /// 为什么要这样：deviceItemPath 用 '/' 分段，而西门子的模块名常常自带 '/'——
+        /// `DQ 16x24VDC/0.5A ST_1`、`AI 4xI 2-/4-wire ST_1`、`AQ 4xU/I ST_1`、`DI 6/DQ 4_1`。
+        /// 逐段比对的话，这些模块**从原理上就寻不到址**：不是找不到，是根本表达不出来
+        /// （用户在 issue #33 里点名了这一条）。
+        ///
+        /// 做法是贪心：把 segments[index..] 里的前 k 段拼回 "a/b/c" 再和子项名比，
+        /// **k 从大到小试**，先匹配更长（更具体）的那个，命中就把 consumed 设成 k。
+        /// 子项名是已知的有限集合，所以这不是猜——是拿候选名去对，不会误吃别人的段。
+        /// </summary>
+        private static DeviceItem? MatchChildByName(
+            IEnumerable<DeviceItem>? children, string[] segments, int index, out int consumed)
+        {
+            consumed = 0;
+            if (children == null || index >= segments.Length) return null;
+
+            var list = children as IList<DeviceItem> ?? children.ToList();
+            var maxSpan = segments.Length - index;
+            for (var span = maxSpan; span >= 1; span--)
+            {
+                var candidate = string.Join("/", segments, index, span);
+                foreach (var child in list)
+                {
+                    if (child != null && child.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+                    {
+                        consumed = span;
+                        return child;
+                    }
+                }
+            }
+            return null;
+        }
+
         private static DeviceItem? GetDeviceItemFromDevice(string[] pathSegments, DeviceComposition? devices, int index, out bool anchorMatched)
         {
             string segment = pathSegments[index];
@@ -1057,14 +1093,14 @@ namespace TiaMcpServer.Siemens
                 }
                 else
                 {
-                    var first = device.DeviceItems.FirstOrDefault(di => di.Name.Equals(nextSegment, StringComparison.OrdinalIgnoreCase));
-                    deviceItem = first;
-                    var nextIndex = index + 2;
+                    // 名字里可能含 '/'，所以每一层都走贪心匹配，吃掉几段由匹配结果决定。
+                    deviceItem = MatchChildByName(device.DeviceItems, pathSegments, index + 1, out var used);
+                    var nextIndex = index + 1 + used;
                     while (deviceItem != null && nextIndex < pathSegments.Length)
                     {
-                        var wanted = pathSegments[nextIndex];
-                        deviceItem = deviceItem.DeviceItems.FirstOrDefault(di => di.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
-                        nextIndex++;
+                        deviceItem = MatchChildByName(deviceItem.DeviceItems, pathSegments, nextIndex, out used);
+                        if (used == 0) break;
+                        nextIndex += used;
                     }
                 }
 
@@ -1082,11 +1118,12 @@ namespace TiaMcpServer.Siemens
                 if (deviceItem != null)
                 {
                     anchorMatched = true;
-                    for (var next = index + 1; deviceItem != null && next < pathSegments.Length; next++)
+                    var next = index + 1;
+                    while (deviceItem != null && next < pathSegments.Length)
                     {
-                        var wanted = pathSegments[next];
-                        deviceItem = deviceItem.DeviceItems.FirstOrDefault(
-                            di => di.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+                        deviceItem = MatchChildByName(deviceItem.DeviceItems, pathSegments, next, out var used);
+                        if (used == 0) break;
+                        next += used;
                     }
                 }
             }

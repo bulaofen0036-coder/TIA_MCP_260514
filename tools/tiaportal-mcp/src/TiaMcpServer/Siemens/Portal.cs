@@ -424,6 +424,30 @@ namespace TiaMcpServer.Siemens
             return lines;
         }
 
+        /// <summary>
+        /// 起一个**全新的无头 TIA Portal 实例**，不去 attach 任何已经在跑的实例。
+        ///
+        /// 为什么需要它：ConnectPortal 会优先接管**已经开着工程**的那个实例，
+        /// 而 OpenProject 又（正确地）拒绝动别人的工程 —— 于是用户只要博途里开着
+        /// 任何工程，MCP 就**完全用不了**。那不是安全，那是把人挡在门外。
+        /// 有了这条路，用户可以一边在界面里干活，一边让 MCP 在自己的实例里跑自己的工程。
+        ///
+        /// 必须是这个 MCP 进程里的第一个连接动作：已经绑了别的连接再起隔离实例，
+        /// 只会留下一个没人管的 Siemens.Automation.Portal 进程，之后别的 attach 会把它
+        /// 抢走，表现为间歇性的「no open project」。
+        /// </summary>
+        public bool ConnectIsolatedPortal()
+        {
+            if (_portal != null || _project != null || _session != null)
+                throw new PortalException(PortalErrorCode.InvalidState,
+                    "ConnectIsolated: this MCP session already owns a TIA connection. "
+                    + "Start a fresh MCP process before calling ConnectIsolated.");
+            LastConnectError = null;
+            _portal = new TiaPortal(TiaPortalMode.WithoutUserInterface);
+            _logger?.LogInformation("Started isolated headless TIA Portal instance.");
+            return true;
+        }
+
         public bool IsConnected()
         {
             return _portal != null;

@@ -86,6 +86,48 @@ namespace TiaMcpServer.ModelContextProtocol
             }
         }
 
+        [McpServerTool(Name = "ConnectIsolated"), Description(
+            "[L1][Portal] Start a BRAND-NEW headless TIA Portal instance instead of attaching to a running one. "
+            + "It never attaches to, modifies or closes any TIA window or project the user already has open. "
+            + "USE THIS when the user is working in the TIA Portal UI: plain Connect attaches to their instance "
+            + "and OpenProject then (correctly) refuses to touch their project, so the whole server is unusable "
+            + "until they close it. Must be the FIRST connection tool in a fresh MCP process — calling it after "
+            + "another connection leaves an orphaned portal process that later attaches steal. "
+            + "Afterwards use OpenProject / CreateProject as usual, then CloseProject and Disconnect.")]
+        public static ResponseConnect ConnectIsolated()
+        {
+            try
+            {
+                Portal.ConnectIsolatedPortal();
+
+                // 回读句柄才算证据，不拿「没抛异常」当成功。
+                bool connected = Portal.IsConnected();
+                return new ResponseConnect
+                {
+                    Message = connected
+                        ? "Connected to isolated headless TIA Portal (no existing TIA window or project was touched)."
+                        : "⚠ 未验证：ConnectIsolated 没有报错，但读不回 portal 句柄，"
+                          + "隔离实例到底起没起来**无法确认**。用 GetState 核对之后再往下走。",
+                    Meta = new JsonObject
+                    {
+                        ["timestamp"] = DateTime.Now,
+                        ["success"] = connected,
+                        ["verified"] = connected,
+                        ["isolated"] = true
+                    }
+                };
+            }
+            catch (PortalException pex)
+            {
+                throw new McpException(pex.Message, pex, McpErrorCode.InvalidParams);
+            }
+            catch (Exception ex) when (ex is not McpException)
+            {
+                throw new McpException($"Failed to start isolated TIA Portal: {ex.Message}{McpHints.Recovery(ex)}",
+                    ex, McpErrorCode.InternalError);
+            }
+        }
+
         [McpServerTool(Name = "ListPortalProcessProjects"), Description("[L1][Portal]List running TIA Portal processes and the projects/sessions visible in each process.")]
         public static ResponseStringList ListPortalProcessProjects()
         {
