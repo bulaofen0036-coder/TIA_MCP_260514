@@ -1,8 +1,8 @@
 {
   "package": "TIA_MCP_Delivery_v2.4.0",
-  "generatedAt": "2026-09-05T09:37:26.189195+08:00",
+  "generatedAt": "2026-09-05T10:47:50.276958+08:00",
   "source": "live MCP tools/list of TiaMcpServer.exe",
-  "toolCount": 221,
+  "toolCount": 222,
   "note": "Full roster (--profile full). The default lite profile lists ~49 of these; the rest stay reachable via FindTools + CallTool. Runtime tools/list remains authoritative.",
   "tools": [
     {
@@ -540,6 +540,15 @@
         "subnetName"
       ],
       "description": "[L1][Hardware] PREFERRED for PROFINET network setup. Finds the first IE/PROFINET node under two devices, creates/reuses a subnet on the first, connects the second, and returns readback evidence. Requires: Connect + OpenProject + both devices added. Typical: firstRootPath='PLC_1', secondRootPath='HMI_KTP700_1/HMI_KTP700_1.IE_CP_1'. Verified for S7-1200 + KTP700 Basic PN."
+    },
+    {
+      "name": "ConnectIsolated",
+      "layer": "L1",
+      "domain": "Portal",
+      "method": "ConnectIsolated",
+      "returnType": "",
+      "parameters": [],
+      "description": "[L1][Portal] Start a BRAND-NEW headless TIA Portal instance instead of attaching to a running one. It never attaches to, modifies or closes any TIA window or project the user already has open. USE THIS when the user is working in the TIA Portal UI: plain Connect attaches to their instance and OpenProject then (correctly) refuses to touch their project, so the whole server is unusable until they close it. Must be the FIRST connection tool in a fresh MCP process — calling it after another connection leaves an orphaned portal process that later attaches steal. Afterwards use OpenProject / CreateProject as usual, then CloseProject and Disconnect."
     },
     {
       "name": "ConnectProjectToWorkspace",

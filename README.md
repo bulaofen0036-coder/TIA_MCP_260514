@@ -141,7 +141,7 @@ GetVersionControlStatus(changedOnly=true)
    **Claude Desktop / Claude Code / Cursor / VS Code** (existing config backed up
    as `.bak`, other servers preserved). Restart the AI client to load it.
    Options: `config --host vscode` (or `claude|claude-code|cursor`), `config --print`
-   to copy a snippet manually. The server lists **~54 core tools of 221 by default**
+   to copy a snippet manually. The server lists **~55 core tools of 222 by default**
    (~8,500 instead of ~38,800 tokens of schema per turn) so weaker models are not drowned
    and VS Code/Copilot's 128-tool cap and Windsurf's 100 never trip. Nothing is lost: the
    model reaches every other tool on demand with `FindTools("plain words")` +
