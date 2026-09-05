@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <!--
     最小离线自检套件。
 
@@ -34,5 +34,9 @@
          「坏了也悄无声息」那一类，只有会失败的用例盯得住。 -->
     <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\ArgDiagnostics.cs" Link="ArgDiagnostics.cs" />
     <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\ExportStore.cs" Link="ExportStore.cs" />
+    <!-- 「进程没了」和「这步失败了」的分类器。抽成零依赖文件就是为了能在这里被喂输入：
+         它埋在依赖 Siemens.Engineering 的大文件里时，没装博途的机器一行都测不到，
+         而崩溃路径本来就少见 —— 判错了也悄无声息，属于只有会失败的用例盯得住的那类。 -->
+    <Compile Include="..\..\src\TiaMcpServer\ModelContextProtocol\PortalFailureClassifier.cs" Link="PortalFailureClassifier.cs" />
   </ItemGroup>
 </Project>

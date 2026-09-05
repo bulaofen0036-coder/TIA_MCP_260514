@@ -1,5 +1,32 @@
 ﻿# Change Log
 
+## [Unreleased] - 写 Unified JS 脚本不再赌上整个博途进程
+
+### 修复
+
+- **写完 Unified HMI 的 JS 事件脚本就强制跑 `SyntaxCheck()`，在 TIA V21 上会偶发
+  把博途进程整个带走**（issue #36，由 Moy-GH 报告）。抛的是 `NonRecoverableException`，
+  不是「这一步失败了」而是「进程没了」：句柄全部作废，刚写进去、还没保存的脚本
+  随之消失。而这个检查从来不是这次调用的目的 —— 目的是把脚本写进去。
+  现在 `SetUnifiedHmiButtonEventScriptCode` 与 `EnsureUnifiedHmiButtonAction`
+  都新增 `syntaxCheck` 参数，**默认 false**，不再跑这个检查。
+
+  三处配套改动，都是为了不让「没做」看起来像「做过了」：
+
+  - **不查的时候绝不发 `syntaxErrorCount`。** 发一个 `0` 出去等于把「没检查」
+    谎报成「检查通过」。改为显式给出 `syntaxCheckStatus=skipped` 与跳过原因，
+    键缺席只能读成「没查」。
+  - **检查真把进程干掉时，不再返回成功。** 原来这个异常被 `catch` 吞进
+    `meta["syntaxError"]`，然后照常返回「ScriptCode set」—— 而实际上那份脚本
+    已经跟着进程一起没了。现在识别出「进程级致命错」就如实报不确定，
+    并给出恢复步骤（重连、用 `syntaxCheck=false` 重写、保存）。
+  - **ScriptCode 写失败的判断挪到检查之前。** 原来排在后面，等于先拿一个已知
+    会弄崩 V21 的调用，去检查一份根本没写进去的脚本。
+
+  需要 TIA 自己的语法结论时显式传 `syntaxCheck=true`（`--validate-unified-hmi-action-syntaxcheck`
+  这条以取证为目的的 CLI 就是这么做的）。只想检查脚本写得对不对，用离线的
+  `BuildUnifiedHmiButtonActionScript`，它不连博途，崩不了任何东西。
+
 ## [2.7.2] - 2026-09-05 - 寻不到址的模块、用不了的服务器、不说话的空结果
 
 三条都来自 issue #33 的现场反馈，都是「工具在，但用不上」。

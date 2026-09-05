@@ -3128,7 +3128,7 @@ namespace TiaMcpServer.Siemens
             }
         }
 
-        public ResponseMessage SetUnifiedHmiButtonEventScriptCode(string hmiSoftwarePath, string screenName, string buttonName, string eventType, string scriptCode, string globalDefinitionAreaScriptCode = "", bool async = false)
+        public ResponseMessage SetUnifiedHmiButtonEventScriptCode(string hmiSoftwarePath, string screenName, string buttonName, string eventType, string scriptCode, string globalDefinitionAreaScriptCode = "", bool async = false, bool syntaxCheck = false)
         {
             return RunHmiStepTool("SetUnifiedHmiButtonEventScriptCode", meta =>
             {
@@ -3148,39 +3148,76 @@ namespace TiaMcpServer.Siemens
                 meta["setGlobalDefinitionAreaScriptCode"] = setGlobalCode;
                 meta["setAsync"] = setAsync;
 
-                object? syntaxResult = null;
-                try
-                {
-                    syntaxResult = script.GetType().GetMethod("SyntaxCheck", Type.EmptyTypes)?.Invoke(script, Array.Empty<object>());
-                    if (syntaxResult != null)
-                    {
-                        var syntaxErrors = TryGetEnumerableStrings(syntaxResult, "Errors").ToList();
-                        var syntaxWarnings = TryGetEnumerableStrings(syntaxResult, "Warnings").ToList();
-                        meta["syntaxResultType"] = syntaxResult.GetType().FullName;
-                        meta["syntaxResult"] = syntaxResult.ToString();
-                        meta["syntaxErrors"] = ToJsonArray(syntaxErrors);
-                        meta["syntaxWarnings"] = ToJsonArray(syntaxWarnings);
-                        meta["syntaxErrorCount"] = syntaxErrors.Count;
-                        meta["syntaxWarningCount"] = syntaxWarnings.Count;
-                        meta["syntaxPropertyName"] = TryGetPropertyValue(syntaxResult, "PropertyName")?.ToString() ?? string.Empty;
-                        meta["syntaxMembers"] = string.Join(" | ", DescribeMembers(syntaxResult, 80).Select(m => $"{m.Kind}:{m.Name}:{m.Type}"));
-                    }
-                }
-                catch (TargetInvocationException tie) when (tie.InnerException != null)
-                {
-                    meta["syntaxError"] = $"{tie.InnerException.GetType().FullName}: {tie.InnerException.Message}";
-                }
-                catch (Exception ex)
-                {
-                    meta["syntaxError"] = ex.Message;
-                }
-
+                // 写不进去就到此为止：ScriptCode 都没落下，再去跑 SyntaxCheck 只是拿一个
+                // 已知会弄崩 V21 的调用，去检查一份根本不存在的脚本。这个判断以前排在
+                // SyntaxCheck 之后，等于先冒一次崩溃风险，才发现这一步本来就该失败。
                 if (!setScriptCode)
                 {
                     throw new InvalidOperationException($"ScriptCode property could not be written on {script.GetType().FullName}.");
                 }
 
-                return $"ScriptCode set for '{buttonName}.{eventType}'.";
+                // SyntaxCheck 默认不跑（issue #36）：TIA V21 上对 Unified 的 Script 对象调
+                // SyntaxCheck() 会偶发抛 NonRecoverableException 并带走整个 Portal 进程，
+                // 脚本已写进内存却随进程一起丢掉。检查是可选的增值动作，不该让「写脚本」
+                // 这件必须成功的事去赌它。需要证据的调用方显式传 syntaxCheck: true。
+                meta["syntaxCheckRequested"] = syntaxCheck;
+                if (!syntaxCheck)
+                {
+                    // 不发 syntaxErrorCount：缺席必须读成「没查」，而不是「查了 0 个错」。
+                    meta["syntaxCheckStatus"] = "skipped";
+                    meta["syntaxCheckSkippedReason"] =
+                        "SyntaxCheck was not run (default). On TIA V21 it can crash the Portal process " +
+                        "(NonRecoverableException) and take the just-written ScriptCode with it. " +
+                        "Pass syntaxCheck=true only when you need the evidence and can afford the risk.";
+                }
+                else
+                {
+                    object? syntaxResult = null;
+                    try
+                    {
+                        syntaxResult = script.GetType().GetMethod("SyntaxCheck", Type.EmptyTypes)?.Invoke(script, Array.Empty<object>());
+                        if (syntaxResult != null)
+                        {
+                            var syntaxErrors = TryGetEnumerableStrings(syntaxResult, "Errors").ToList();
+                            var syntaxWarnings = TryGetEnumerableStrings(syntaxResult, "Warnings").ToList();
+                            meta["syntaxCheckStatus"] = "ran";
+                            meta["syntaxResultType"] = syntaxResult.GetType().FullName;
+                            meta["syntaxResult"] = syntaxResult.ToString();
+                            meta["syntaxErrors"] = ToJsonArray(syntaxErrors);
+                            meta["syntaxWarnings"] = ToJsonArray(syntaxWarnings);
+                            meta["syntaxErrorCount"] = syntaxErrors.Count;
+                            meta["syntaxWarningCount"] = syntaxWarnings.Count;
+                            meta["syntaxPropertyName"] = TryGetPropertyValue(syntaxResult, "PropertyName")?.ToString() ?? string.Empty;
+                            meta["syntaxMembers"] = string.Join(" | ", DescribeMembers(syntaxResult, 80).Select(m => $"{m.Kind}:{m.Name}:{m.Type}"));
+                        }
+                        else
+                        {
+                            // 这个 Script 类型上根本没有 SyntaxCheck 方法，同样不是「0 个错」。
+                            meta["syntaxCheckStatus"] = "unavailable";
+                            meta["syntaxCheckSkippedReason"] = $"No SyntaxCheck() method on {script.GetType().FullName}.";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        var real = ex is TargetInvocationException tie && tie.InnerException != null ? tie.InnerException : ex;
+                        meta["syntaxCheckStatus"] = "faulted";
+                        meta["syntaxError"] = $"{real.GetType().FullName}: {real.Message}";
+
+                        // NonRecoverableException 不是「这一步没做成」，是 Portal 进程已经没了。
+                        // 刚写进去的 ScriptCode 没保存就随进程消失，这时候再返回 Success 是在撒谎。
+                        if (ModelContextProtocol.PortalFailureClassifier.IsPortalProcessLost(real))
+                        {
+                            throw new InvalidOperationException(
+                                "SyntaxCheck killed the TIA Portal process (" + real.GetType().Name + "). " +
+                                "The ScriptCode was written in memory but is NOT saved - the whole session is gone. " +
+                                "Reconnect, re-apply the script with syntaxCheck=false, and save. This is issue #36.", real);
+                        }
+                    }
+                }
+
+                return syntaxCheck
+                    ? $"ScriptCode set for '{buttonName}.{eventType}'."
+                    : $"ScriptCode set for '{buttonName}.{eventType}' (SyntaxCheck skipped by default; see syntaxCheckSkippedReason).";
             });
         }
 
