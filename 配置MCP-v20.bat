@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 rem 一键把本 MCP 注册进 Claude Desktop / Claude Code / Cursor / VS Code（V20）。V21 用户请用 配置MCP.bat。
 rem 自动写入正确的 exe 路径并合并到现有配置（保留你已有的其它 MCP server，原配置自动备份为 *.bak）。
@@ -16,7 +16,7 @@ echo.
 "%EXE%" config %*
 echo.
 echo 完成后请重启对应 AI 客户端。
-echo 提示：默认写入精简档（约 42 个核心工具，弱模型/VS Code 也稳）。要全量 200+ 工具改跑：配置MCP-v20.bat --full
+echo 提示：默认写入精简档（约 55 个核心工具，弱模型/VS Code 也稳）。要全量 222 个工具改跑：配置MCP-v20.bat --full
 echo 提示：连不上/报错时，跑：tia-v20.cmd doctor  一键体检（加 --fix 可自动修 Openness 用户组）
 echo 提示：其它未自动写入的宿主，跑：配置MCP-v20.bat --print  复制配置片段手动粘贴
 pause

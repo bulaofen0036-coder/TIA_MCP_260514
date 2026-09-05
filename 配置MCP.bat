@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 rem 一键把本 MCP 注册进 Claude Desktop / Claude Code / Cursor / VS Code（V21）。V20 用户请改用 配置MCP-v20.bat。
 rem 自动写入正确的 exe 路径并合并到现有配置（保留你已有的其它 MCP server，原配置自动备份为 *.bak）。
@@ -16,7 +16,7 @@ echo.
 "%EXE%" config %*
 echo.
 echo 完成后请重启对应 AI 客户端。
-echo 提示：默认只列出 ~48 个核心工具（其余 ~155 个 AI 用 FindTools/CallTool 随用随取，能力不缺）。
+echo 提示：默认只列出 ~55 个核心工具（其余 ~167 个 AI 用 FindTools/CallTool 随用随取，能力不缺）。
 echo 提示：想一次列全部 203 个工具，跑：配置MCP.bat --full （注意 VS Code/Copilot 上限 128、Windsurf 100，超了会直接加载失败）
 echo 提示：连不上/报错时，跑：tia.cmd doctor  一键体检（加 --fix 可自动修 Openness 用户组）
 echo 提示：其它未自动写入的宿主，跑：配置MCP.bat --print  复制配置片段手动粘贴
